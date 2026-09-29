@@ -1,25 +1,27 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use pyo3::exceptions::{PyLookupError, PyTypeError, PyUnicodeDecodeError};
+use rustc_hash::FxHashMap;
+
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyByteArray, PyBytes, PyDict, PyList};
+use pyo3::types::{PyAny, PyByteArray, PyBytes};
 
-use super::mess::mess_ratio;
+use super::codecs::{self, DecodeError, Errors};
+use super::mess::mess_ratio_impl;
+use super::models::{CharsetMatch, CharsetMatches};
+use super::tables::{self, IANA_SUPPORTED_MB_FIRST, TOO_BIG_SEQUENCE, TOO_SMALL_SEQUENCE, TRACE};
 use super::{
-    coherence_ratio, constants, cut_sequence_chunks_impl, iana_name, identify_sig_or_bom,
-    merge_coherence_ratios, should_strip_sig_or_bom,
+    coherence, iana_name_impl, log, mb_languages, merge_coherence, py_sum, should_strip_sig_or_bom,
+    sig_or_bom, single_byte_languages, specified_encoding, ChunkCutter, DEBUG,
 };
 
-fn decode(py: Python<'_>, bytes: &[u8], encoding: &str) -> PyResult<String> {
-    PyBytes::new(py, bytes)
-        .call_method1("decode", (encoding, "strict"))?
-        .extract()
+fn decode(bytes: &[u8], encoding: &str) -> Result<String, DecodeError> {
+    codecs::decode(bytes, encoding, Errors::Strict)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn new_match(
-    _py: Python<'_>,
-    models: &Bound<'_, PyAny>,
+    py: Python<'_>,
     payload: &Bound<'_, PyAny>,
     encoding: &str,
     chaos: f64,
@@ -27,43 +29,24 @@ fn new_match(
     languages: Vec<(String, f64)>,
     decoded: Option<String>,
     declaration: Option<&str>,
-) -> PyResult<Py<PyAny>> {
-    Ok(models
-        .getattr("CharsetMatch")?
-        .call1((
-            payload,
-            encoding,
+) -> PyResult<Py<CharsetMatch>> {
+    Py::new(
+        py,
+        CharsetMatch::create(
+            py,
+            payload.clone().unbind(),
+            encoding.to_owned(),
             chaos,
             bom,
             languages,
             decoded,
-            declaration,
-        ))?
-        .unbind())
+            declaration.map(str::to_owned),
+        )?,
+    )
 }
 
-fn new_matches(
-    py: Python<'_>,
-    models: &Bound<'_, PyAny>,
-    entries: Vec<Py<PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    Ok(models
-        .getattr("CharsetMatches")?
-        .call1((PyList::new(py, entries)?,))?
-        .unbind())
-}
-
-fn log_message(
-    logger: &Bound<'_, PyAny>,
-    level: &Bound<'_, PyAny>,
-    message: impl Into<String>,
-) -> PyResult<()> {
-    logger.call_method1("log", (level, message.into()))?;
-    Ok(())
-}
-
-fn is_decode_failure(py: Python<'_>, error: &PyErr) -> bool {
-    error.is_instance_of::<PyUnicodeDecodeError>(py) || error.is_instance_of::<PyLookupError>(py)
+fn new_matches(py: Python<'_>, entries: Vec<Py<CharsetMatch>>) -> PyResult<Py<CharsetMatches>> {
+    Py::new(py, CharsetMatches::from_results(py, entries)?)
 }
 
 #[pyfunction(signature = (sequences, steps=5, chunk_size=512, threshold=0.2, cp_isolation=None, cp_exclusion=None, preemptive_behaviour=true, explain=false, language_threshold=0.1, enable_fallback=true))]
@@ -80,7 +63,7 @@ pub(crate) fn from_bytes(
     explain: bool,
     language_threshold: f64,
     enable_fallback: bool,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Py<CharsetMatches>> {
     if !sequences.is_instance_of::<PyBytes>() && !sequences.is_instance_of::<PyByteArray>() {
         return Err(PyTypeError::new_err(format!(
             "Expected object of type bytes or bytearray, got: {}",
@@ -95,23 +78,13 @@ pub(crate) fn from_bytes(
         &owned_bytes
     };
     let length = bytes.len();
-    let models = py.import("charset_normalizer.models")?.into_any();
-    let cd_module = py.import("charset_normalizer.cd")?;
-    let utils_module = py.import("charset_normalizer.utils")?;
-    let logger = py
-        .import("logging")?
-        .getattr("getLogger")?
-        .call1(("charset_normalizer",))?;
-    let trace = constants(py)?.getattr("TRACE")?;
 
     if length == 0 {
-        logger.call_method1(
-            "debug",
-            ("Encoding detection on empty bytes, assuming utf_8 intention.",),
-        )?;
+        log(py, DEBUG, || {
+            "Encoding detection on empty bytes, assuming utf_8 intention.".to_owned()
+        })?;
         let entry = new_match(
             py,
-            &models,
             sequences,
             "utf_8",
             0.0,
@@ -120,14 +93,14 @@ pub(crate) fn from_bytes(
             Some(String::new()),
             None,
         )?;
-        return new_matches(py, &models, vec![entry]);
+        return new_matches(py, vec![entry]);
     }
 
     let normalize = |values: Option<Vec<String>>| -> PyResult<Vec<String>> {
         values
             .unwrap_or_default()
             .into_iter()
-            .map(|value| iana_name(py, &value, false))
+            .map(|value| iana_name_impl(&value, false))
             .collect()
     };
     let isolation = normalize(cp_isolation)?;
@@ -140,101 +113,74 @@ pub(crate) fn from_bytes(
     if steps > 1 && length / steps < chunk_size {
         chunk_size = length / steps;
     }
-    let constants_module = constants(py)?;
-    let too_small: usize = constants_module.getattr("TOO_SMALL_SEQUENCE")?.extract()?;
-    let too_big: usize = constants_module.getattr("TOO_BIG_SEQUENCE")?.extract()?;
-    let is_too_small = length < too_small;
-    let is_too_large = length >= too_big;
+    let is_too_small = length < TOO_SMALL_SEQUENCE;
+    let is_too_large = length >= TOO_BIG_SEQUENCE;
     if is_too_small {
-        log_message(
-            &logger,
-            &trace,
-            format!("Trying to detect encoding from a tiny portion of ({length}) byte(s)."),
-        )?;
+        log(py, TRACE, || {
+            format!("Trying to detect encoding from a tiny portion of ({length}) byte(s).")
+        })?;
     }
 
     let specified = if preemptive_behaviour {
-        super::any_specified_encoding(py, sequences, 8192)?
+        specified_encoding(bytes, 8192)
     } else {
         None
     };
-    let mut prioritized = Vec::<String>::new();
-    if let Some(value) = &specified {
-        prioritized.push(value.clone());
+    let mut prioritized = Vec::<&str>::new();
+    if let Some(value) = specified {
+        prioritized.push(value);
     }
-    let (sig_encoding, sig_payload) = identify_sig_or_bom(py, sequences)?;
-    let sig: Vec<u8> = sig_payload.extract()?;
-    if let Some(value) = &sig_encoding {
-        prioritized.insert(0, value.clone());
+    let (sig_encoding, sig) = sig_or_bom(bytes);
+    if let Some(value) = sig_encoding {
+        prioritized.insert(0, value);
     }
-    prioritized.push("ascii".to_owned());
-    if !prioritized.iter().any(|value| value == "utf_8") {
-        prioritized.push("utf_8".to_owned());
+    prioritized.push("ascii");
+    if !prioritized.contains(&"utf_8") {
+        prioritized.push("utf_8");
     }
-    let supported: Vec<String> = py
-        .import("charset_normalizer.api")?
-        .getattr("IANA_SUPPORTED_MB_FIRST")?
-        .extract()?;
-    prioritized.extend(supported);
+    prioritized.extend_from_slice(IANA_SUPPORTED_MB_FIRST);
 
-    let models_class = models.getattr("CharsetMatches")?;
-    let results = models_class.call0()?;
-    let early_results = models_class.call0()?;
-    let mut tested = HashSet::<String>::new();
-    let mut soft_skip = HashSet::<String>::new();
-    let similar = constants_module
-        .getattr("IANA_SUPPORTED_SIMILAR")?
-        .cast_into::<PyDict>()?;
-    let mut fallback_ascii: Option<Py<PyAny>> = None;
-    let mut fallback_utf8: Option<Py<PyAny>> = None;
-    let mut fallback_specified: Option<Py<PyAny>> = None;
+    let mut results = CharsetMatches::from_results(py, Vec::new())?;
+    let mut early_results = CharsetMatches::from_results(py, Vec::new())?;
+    let mut tested = HashSet::<&str>::new();
+    let mut soft_skip = HashSet::<&str>::new();
+    let mut fallback_ascii: Option<Py<CharsetMatch>> = None;
+    let mut fallback_utf8: Option<Py<CharsetMatch>> = None;
+    let mut fallback_specified: Option<Py<CharsetMatch>> = None;
     let mut definitive = false;
-    let mut definitive_languages = HashSet::<String>::new();
+    let mut definitive_languages = HashSet::<&str>::new();
     let mut post_definitive_success = 0usize;
     let mut multibyte_definitive = false;
-    let mut mess_cache = HashMap::<String, f64>::new();
-    let mut coherence_cache = HashMap::<(String, String), Vec<(String, f64)>>::new();
+    let mut mess_cache = FxHashMap::<String, f64>::default();
+    // inclusion -> chunk -> coherence results
+    let mut coherence_cache =
+        FxHashMap::<String, FxHashMap<String, Vec<(&'static str, f64)>>>::default();
+    let explain_mess = explain && (1..=2).contains(&isolation.len());
 
     for encoding in prioritized {
-        if (!isolation.is_empty() && !isolation.contains(&encoding))
-            || exclusion.contains(&encoding)
-            || tested.contains(&encoding)
+        if (!isolation.is_empty() && !isolation.iter().any(|value| value == encoding))
+            || exclusion.iter().any(|value| value == encoding)
+            || tested.contains(encoding)
         {
             continue;
         }
-        tested.insert(encoding.clone());
-        let bom = sig_encoding.as_deref() == Some(encoding.as_str());
-        let strip_bom = bom && should_strip_sig_or_bom(&encoding);
-        if matches!(encoding.as_str(), "utf_16" | "utf_32" | "utf_7") && !bom {
+        tested.insert(encoding);
+        let bom = sig_encoding == Some(encoding);
+        let strip_bom = bom && should_strip_sig_or_bom(encoding);
+        if matches!(encoding, "utf_16" | "utf_32" | "utf_7") && !bom {
             continue;
         }
-        if soft_skip.contains(&encoding) {
+        if soft_skip.contains(encoding) {
             continue;
         }
-        let multibyte = match utils_module
-            .getattr("is_multi_byte_encoding")?
-            .call1((&encoding,))
-            .and_then(|value| value.extract())
-        {
-            Ok(value) => value,
-            Err(error)
-                if error.is_instance_of::<pyo3::exceptions::PyImportError>(py)
-                    || error.is_instance_of::<pyo3::exceptions::PyModuleNotFoundError>(py) =>
-            {
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        let target_languages: Vec<String> = if multibyte {
-            cd_module
-                .getattr("mb_encoding_languages")?
-                .call1((&encoding,))?
-                .extract()?
+        if !codecs::is_known(encoding) {
+            continue; // no codec available
+        }
+        let multibyte = tables::is_multi_byte_encoding(encoding);
+        let target_languages: Vec<&str> = if multibyte {
+            mb_languages(encoding)
         } else {
-            cd_module
-                .getattr("encoding_languages")?
-                .call1((&encoding,))?
-                .extract()?
+            single_byte_languages(encoding)
         };
         if definitive
             && !target_languages
@@ -258,14 +204,14 @@ pub(crate) fn from_bytes(
         };
         let mut decoded: Option<String> = None;
         let initial_decode = if is_too_large && !multibyte {
-            decode(py, &source[..source.len().min(500_000)], &encoding).map(|_| ())
+            decode(&source[..source.len().min(500_000)], encoding).map(|_| ())
         } else if !deferred {
             let decode_source = if encoding == "utf_7" && bom {
                 bytes
             } else {
                 source
             };
-            decode(py, decode_source, &encoding).map(|mut value| {
+            decode(decode_source, encoding).map(|mut value| {
                 if encoding == "utf_7" && bom && value.starts_with('\u{feff}') {
                     value.remove(0);
                 }
@@ -274,11 +220,8 @@ pub(crate) fn from_bytes(
         } else {
             Ok(())
         };
-        if let Err(error) = initial_decode {
-            if is_decode_failure(py, &error) {
-                continue;
-            }
-            return Err(error);
+        if initial_decode.is_err() {
+            continue;
         }
 
         let step = length / steps;
@@ -290,40 +233,38 @@ pub(crate) fn from_bytes(
                 .is_some_and(|value| value.chars().count() < length);
         let max_give_up = (offsets.len() / 4).max(2);
         let mut early_stop = 0usize;
-        let mut chunks = Vec::<String>::new();
-        let sampled = cut_sequence_chunks_impl(
-            py,
+        let mut cutter = ChunkCutter::new(
             bytes,
-            &encoding,
+            encoding,
             offsets,
             chunk_size,
             bom,
             strip_bom,
-            &sig,
+            sig,
             multibyte,
             decoded.as_deref(),
             deferred,
         );
-        let sampled = match sampled {
-            Ok(value) => value,
-            Err(error) if is_decode_failure(py, &error) => continue,
-            Err(error) => return Err(error),
-        };
+        if cutter.validate().is_err() {
+            continue;
+        }
+        let mut chunks = Vec::new();
         let mut ratios = Vec::new();
-        for chunk in sampled {
-            chunks.push(chunk.clone());
-            let ratio = if let Some(value) = mess_cache.get(&chunk) {
-                *value
-            } else {
-                let value = mess_ratio(
-                    py,
-                    &chunk,
-                    threshold,
-                    explain && (1..=2).contains(&isolation.len()),
-                )?;
-                mess_cache.insert(chunk, value);
-                value
+        let mut failed = false;
+        for chunk in cutter.by_ref() {
+            let Ok(chunk) = chunk else {
+                failed = true;
+                break;
             };
+            let ratio = match mess_cache.get(&chunk) {
+                Some(value) => *value,
+                None => {
+                    let value = mess_ratio_impl(py, &chunk, threshold, explain_mess)?;
+                    mess_cache.insert(chunk.clone(), value);
+                    value
+                }
+            };
+            chunks.push(chunk);
             ratios.push(ratio);
             if ratio >= threshold {
                 early_stop += 1;
@@ -332,56 +273,49 @@ pub(crate) fn from_bytes(
                 break;
             }
         }
+        drop(cutter);
+        if failed {
+            continue;
+        }
         let mean = if ratios.is_empty() {
             0.0
         } else {
-            let total: f64 = py
-                .import("builtins")?
-                .getattr("sum")?
-                .call1((PyList::new(py, &ratios)?,))?
-                .extract()?;
-            total / ratios.len() as f64
+            py_sum(&ratios) / ratios.len() as f64
         };
-        if is_too_large && !multibyte && mean < threshold && early_stop < max_give_up {
-            if let Err(error) = decode(py, &bytes[50_000.min(length)..], &encoding) {
-                if is_decode_failure(py, &error) {
-                    continue;
-                }
-                return Err(error);
-            }
+        if is_too_large
+            && !multibyte
+            && mean < threshold
+            && early_stop < max_give_up
+            && decode(&bytes[50_000.min(length)..], encoding).is_err()
+        {
+            continue;
         }
         if mean >= threshold || early_stop >= max_give_up {
-            if let Some(values) = similar.get_item(&encoding)? {
-                for value in values.try_iter()? {
-                    soft_skip.insert(value?.extract()?);
-                }
-            }
+            soft_skip.extend(tables::similar_encodings(encoding).iter().copied());
             if enable_fallback
                 && (encoding == "ascii"
                     || encoding == "utf_8"
-                    || specified.as_deref() == Some(encoding.as_str())
+                    || specified == Some(encoding)
                     || encoding == "utf_16"
                     || encoding == "utf_32")
             {
                 if decoded.is_none() {
-                    match decode(py, source, &encoding) {
+                    match decode(source, encoding) {
                         Ok(value) => decoded = if is_too_large { None } else { Some(value) },
-                        Err(error) if is_decode_failure(py, &error) => continue,
-                        Err(error) => return Err(error),
+                        Err(_) => continue,
                     }
                 }
                 let fallback = new_match(
                     py,
-                    &models,
                     sequences,
-                    &encoding,
+                    encoding,
                     threshold,
                     bom,
                     Vec::new(),
                     decoded,
-                    specified.as_deref(),
+                    specified,
                 )?;
-                if specified.as_deref() == Some(encoding.as_str()) {
+                if specified == Some(encoding) {
                     fallback_specified = Some(fallback);
                 } else if encoding == "ascii" {
                     fallback_ascii = Some(fallback);
@@ -392,47 +326,37 @@ pub(crate) fn from_bytes(
             continue;
         }
         if deferred {
-            decoded = match decode(py, source, &encoding) {
-                Ok(value) => Some(value),
-                Err(error) if is_decode_failure(py, &error) => continue,
-                Err(error) => return Err(error),
-            };
+            match decode(source, encoding) {
+                Ok(value) => decoded = Some(value),
+                Err(_) => continue,
+            }
         }
 
-        let inclusion = if target_languages.is_empty() {
-            String::new()
-        } else {
-            target_languages.join(",")
-        };
+        let inclusion = target_languages.join(",");
         let mut coherence_results = Vec::new();
         if encoding != "ascii" {
+            let cache = coherence_cache.entry(inclusion.clone()).or_default();
             for chunk in &chunks {
-                let key = (chunk.clone(), inclusion.clone());
-                let values = if let Some(value) = coherence_cache.get(&key) {
-                    value.clone()
-                } else {
-                    let value = coherence_ratio(
-                        py,
-                        chunk,
-                        language_threshold,
-                        if inclusion.is_empty() {
-                            None
-                        } else {
-                            Some(inclusion.as_str())
-                        },
-                    )?;
-                    let value: Vec<(String, f64)> = value.bind(py).extract()?;
-                    coherence_cache.insert(key, value.clone());
-                    value
+                let values = match cache.get(chunk.as_str()) {
+                    Some(value) => value.clone(),
+                    None => {
+                        let value = coherence(
+                            chunk,
+                            language_threshold,
+                            (!inclusion.is_empty()).then_some(inclusion.as_str()),
+                        )?;
+                        cache.insert(chunk.clone(), value.clone());
+                        value
+                    }
                 };
                 coherence_results.push(values);
             }
         }
-        let merged = merge_coherence_ratios(py, coherence_results)?;
-        let merged: Vec<(String, f64)> = merged.bind(py).extract()?;
+        let merged = merge_coherence(coherence_results);
+        let best_coherence = merged.iter().map(|item| item.1).fold(0.0, f64::max);
         let retained_decoded = if !is_too_large
-            || specified.as_deref() == Some(encoding.as_str())
-            || matches!(encoding.as_str(), "ascii" | "utf_8")
+            || specified == Some(encoding)
+            || matches!(encoding, "ascii" | "utf_8")
         {
             decoded.clone()
         } else {
@@ -440,52 +364,46 @@ pub(crate) fn from_bytes(
         };
         let current = new_match(
             py,
-            &models,
             sequences,
-            &encoding,
+            encoding,
             mean,
             bom,
-            merged.clone(),
+            merged
+                .iter()
+                .map(|(language, ratio)| ((*language).to_owned(), *ratio))
+                .collect(),
             retained_decoded,
-            specified.as_deref(),
+            specified,
         )?;
-        results.call_method1("append", (current.bind(py),))?;
+        results.push(py, current.clone_ref(py))?;
         if definitive && !multibyte && mean < 0.02 {
             post_definitive_success += 1;
         }
-        if (specified.as_deref() == Some(encoding.as_str())
-            || matches!(encoding.as_str(), "ascii" | "utf_8"))
-            && mean < 0.1
-        {
+        if (specified == Some(encoding) || matches!(encoding, "ascii" | "utf_8")) && mean < 0.1 {
             if mean == 0.0 {
-                logger.call_method1(
-                    "debug",
-                    (format!(
-                        "Encoding detection: {encoding} is most likely the one."
-                    ),),
-                )?;
-                return new_matches(py, &models, vec![current]);
+                log(py, DEBUG, || {
+                    format!("Encoding detection: {encoding} is most likely the one.")
+                })?;
+                return new_matches(py, vec![current]);
             }
-            early_results.call_method1("append", (current.bind(py),))?;
+            early_results.push(py, current.clone_ref(py))?;
         }
-        let early_len = early_results.len()?;
-        if early_len > 0
-            && (specified.is_none()
-                || specified
-                    .as_ref()
-                    .is_some_and(|value| tested.contains(value)))
+        if early_results.len() > 0
+            && specified.is_none_or(|value| tested.contains(value))
             && tested.contains("ascii")
             && tested.contains("utf_8")
         {
-            let best = early_results.call_method0("best")?;
-            return new_matches(py, &models, vec![best.unbind()]);
+            let best = early_results.best_native(py)?;
+            return new_matches(py, best.into_iter().collect());
         }
-        if !definitive && !multibyte {
-            let best_coherence = merged.iter().map(|item| item.1).fold(0.0, f64::max);
-            if best_coherence >= 0.5 && tested.contains("ascii") && tested.contains("utf_8") {
-                definitive = true;
-                definitive_languages.extend(target_languages.iter().cloned());
-            }
+        if !definitive
+            && !multibyte
+            && best_coherence >= 0.5
+            && tested.contains("ascii")
+            && tested.contains("utf_8")
+        {
+            definitive = true;
+            definitive_languages.extend(target_languages.iter().copied());
         }
         if !multibyte_definitive
             && multibyte
@@ -494,7 +412,7 @@ pub(crate) fn from_bytes(
                 .as_ref()
                 .is_some_and(|value| (value.chars().count() as f64) < length as f64 * 0.98)
             && !matches!(
-                encoding.as_str(),
+                encoding,
                 "utf_8"
                     | "utf_8_sig"
                     | "utf_16"
@@ -510,32 +428,30 @@ pub(crate) fn from_bytes(
         {
             multibyte_definitive = true;
         }
-        if sig_encoding.as_deref() == Some(encoding.as_str()) {
-            return new_matches(py, &models, vec![current]);
+        if sig_encoding == Some(encoding) {
+            return new_matches(py, vec![current]);
         }
     }
 
-    if results.len()? == 0 {
-        let fallback = fallback_specified.or(fallback_utf8).or(fallback_ascii);
-        if let Some(value) = fallback {
-            results.call_method1("append", (value.bind(py),))?;
+    if results.len() == 0 {
+        if let Some(value) = fallback_specified.or(fallback_utf8).or(fallback_ascii) {
+            results.push(py, value)?;
         }
     }
-    if results.len()? > 0 {
-        let best = results.call_method0("best")?;
-        let encoding: String = best.getattr("encoding")?.extract()?;
-        logger.call_method1(
-            "debug",
-            (format!(
-                "Encoding detection: Found {encoding} as plausible (best-candidate) for content. With {} alternatives.",
-                results.len()? - 1
-            ),),
-        )?;
+    if results.len() > 0 {
+        let alternatives = results.len() - 1;
+        if let Some(best) = results.best_native(py)? {
+            let encoding = best.bind(py).borrow().encoding_name().to_owned();
+            log(py, DEBUG, || {
+                format!(
+                    "Encoding detection: Found {encoding} as plausible (best-candidate) for content. With {alternatives} alternatives."
+                )
+            })?;
+        }
     } else {
-        logger.call_method1(
-            "debug",
-            ("Encoding detection: Unable to determine any suitable charset.",),
-        )?;
+        log(py, DEBUG, || {
+            "Encoding detection: Unable to determine any suitable charset.".to_owned()
+        })?;
     }
-    Ok(results.unbind())
+    Py::new(py, results)
 }

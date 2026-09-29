@@ -1,18 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::prelude::*;
-use pyo3::types::PyString;
 
-use super::{character_flags, constants, suspicious_ranges_impl, unicode_range};
-use super::{
-    ACCENTUATED, ARABIC, ARABIC_ISOLATED_FORM, CJK, HALFWIDTH_KATAKANA, HANGUL, HIRAGANA, KATAKANA,
-    LATIN, LIGATURE, SENTENCE_OPEN_PUNCTUATION, SUPERSCRIPT, THAI,
+use crate::unicode::{
+    self, is_common_cjk, is_safe_ascii, RangeInfo, ACCENTUATED, ARABIC, ARABIC_ISOLATED_FORM, CJK,
+    HALFWIDTH_KATAKANA, HANGUL, HIRAGANA, KATAKANA, LATIN, LIGATURE, SENTENCE_OPEN_PUNCTUATION,
+    SUPERSCRIPT, THAI,
 };
+use crate::{log, py_round, tables::TRACE};
 
 const GLYPH_MASK: u16 = CJK | HANGUL | KATAKANA | HIRAGANA | THAI;
 
-#[derive(Clone)]
-struct CharInfo {
+/// Unpacked character properties, used while computing the packed form.
+struct CharFields {
     printable: bool,
     alpha: bool,
     upper: bool,
@@ -20,121 +20,187 @@ struct CharInfo {
     space: bool,
     digit: bool,
     ascii: bool,
-    case_variable: bool,
     flags: u16,
-    accentuated: bool,
-    latin: bool,
-    cjk: bool,
-    katakana: bool,
-    halfwidth_katakana: bool,
-    arabic: bool,
-    ligature: bool,
-    superscript: bool,
-    sentence_open_punctuation: bool,
-    glyph: bool,
     punct: bool,
     symbol: bool,
-    range: Option<String>,
+    range: u16,
     separator: bool,
     emoticon: bool,
     safe: bool,
     common_cjk: bool,
-    unaccented: String,
+    unaccented: char,
 }
 
-fn python_predicate(value: &Bound<'_, PyString>, method: &str) -> PyResult<bool> {
-    value.call_method0(method)?.extract()
-}
+const CACHE_SIZE: usize = 0x30000;
+const COMPUTED: u64 = 1 << 63;
+static CACHE: [AtomicU64; CACHE_SIZE] = [const { AtomicU64::new(0) }; CACHE_SIZE];
 
-fn char_info(
-    py: Python<'_>,
-    character: char,
-    safe_ascii: &HashSet<char>,
-    common_cjk: &HashSet<char>,
-) -> PyResult<CharInfo> {
-    let text = character.to_string();
-    let ascii = character.is_ascii();
-    let py_char = PyString::new(py, &text);
-    let printable = python_predicate(&py_char, "isprintable")?;
-    let alpha = python_predicate(&py_char, "isalpha")?;
-    let upper = python_predicate(&py_char, "isupper")?;
-    let lower = python_predicate(&py_char, "islower")?;
-    let space = python_predicate(&py_char, "isspace")?;
-    let digit = python_predicate(&py_char, "isdigit")?;
-    let flags = if ascii {
-        if character.is_ascii_alphabetic() {
-            LATIN
-        } else {
-            0
+const PRINTABLE: u64 = 1 << 13;
+const ALPHA: u64 = 1 << 14;
+const UPPER: u64 = 1 << 15;
+const LOWER: u64 = 1 << 16;
+const SPACE: u64 = 1 << 17;
+const DIGIT: u64 = 1 << 18;
+const ASCII: u64 = 1 << 19;
+const PUNCT: u64 = 1 << 20;
+const SYMBOL: u64 = 1 << 21;
+const SEPARATOR: u64 = 1 << 22;
+const EMOTICON: u64 = 1 << 23;
+const SAFE: u64 = 1 << 24;
+const COMMON_CJK: u64 = 1 << 25;
+
+fn pack(info: &CharFields) -> u64 {
+    let mut bits = COMPUTED | info.flags as u64;
+    for (set, bit) in [
+        (info.printable, PRINTABLE),
+        (info.alpha, ALPHA),
+        (info.upper, UPPER),
+        (info.lower, LOWER),
+        (info.space, SPACE),
+        (info.digit, DIGIT),
+        (info.ascii, ASCII),
+        (info.punct, PUNCT),
+        (info.symbol, SYMBOL),
+        (info.separator, SEPARATOR),
+        (info.emoticon, EMOTICON),
+        (info.safe, SAFE),
+        (info.common_cjk, COMMON_CJK),
+    ] {
+        if set {
+            bits |= bit;
         }
-    } else {
-        character_flags(py, &text)?
-    };
-    let category: String = py
-        .import("unicodedata")?
-        .getattr("category")?
-        .call1((&text,))?
-        .extract()?;
-    let range = unicode_range(py, &text)?;
-    let punct = printable
-        && (category.contains('P')
-            || range
-                .as_deref()
-                .is_some_and(|name| name.contains("Punctuation")));
-    let symbol = printable
-        && (category.contains('S')
-            || (!ascii
-                && (category.contains('N')
-                    || (range.as_deref().is_some_and(|name| name.contains("Forms"))
-                        && category != "Lo"))));
-    let separator = space
-        || matches!(character, '｜' | '+' | '<' | '>')
-        || category.contains('Z')
-        || matches!(category.as_str(), "Po" | "Pd" | "Pc");
-    let accentuated = flags & ACCENTUATED != 0;
-    let latin = flags & LATIN != 0;
-    let cjk = flags & CJK != 0;
-    let utils = py.import("charset_normalizer.utils")?;
-    let emoticon = if alpha {
-        false
-    } else {
-        utils.getattr("is_emoticon")?.call1((&text,))?.extract()?
-    };
-    let unaccented = if latin && accentuated {
-        utils.getattr("remove_accent")?.call1((&text,))?.extract()?
-    } else {
-        text.clone()
-    };
+    }
+    bits | (info.range as u64) << 26 | (info.unaccented as u64) << 36
+}
 
-    Ok(CharInfo {
+/// Packed mess-detector view of a character (see `pack` for the layout).
+#[derive(Clone, Copy)]
+struct CharInfo(u64);
+
+macro_rules! bit_accessors {
+    ($($name:ident => $bit:expr),* $(,)?) => {
+        $(#[inline] fn $name(&self) -> bool { self.0 & $bit != 0 })*
+    };
+}
+
+macro_rules! flag_accessors {
+    ($($name:ident => $flag:expr),* $(,)?) => {
+        $(#[inline] fn $name(&self) -> bool { self.flags() & $flag != 0 })*
+    };
+}
+
+impl CharInfo {
+    bit_accessors! {
+        printable => PRINTABLE,
+        alpha => ALPHA,
+        upper => UPPER,
+        lower => LOWER,
+        space => SPACE,
+        digit => DIGIT,
+        ascii => ASCII,
+        punct => PUNCT,
+        symbol => SYMBOL,
+        separator => SEPARATOR,
+        emoticon => EMOTICON,
+        safe => SAFE,
+        common_cjk => COMMON_CJK,
+    }
+    flag_accessors! {
+        accentuated => ACCENTUATED,
+        latin => LATIN,
+        cjk => CJK,
+        katakana => KATAKANA,
+        halfwidth_katakana => HALFWIDTH_KATAKANA,
+        arabic => ARABIC,
+        arabic_isolated_form => ARABIC_ISOLATED_FORM,
+        ligature => LIGATURE,
+        superscript => SUPERSCRIPT,
+        sentence_open_punctuation => SENTENCE_OPEN_PUNCTUATION,
+        glyph => GLYPH_MASK,
+    }
+
+    #[inline]
+    fn flags(&self) -> u16 {
+        (self.0 & 0x1FFF) as u16
+    }
+
+    #[inline]
+    fn case_variable(&self) -> bool {
+        self.lower() != self.upper()
+    }
+
+    #[inline]
+    fn range(&self) -> u16 {
+        ((self.0 >> 26) & 0x3FF) as u16
+    }
+
+    #[inline]
+    fn unaccented(&self) -> u32 {
+        ((self.0 >> 36) & 0x1F_FFFF) as u32
+    }
+}
+
+/// `(isalpha, unicode range index)` for coherence splitting.
+#[inline]
+pub(crate) fn alpha_range(character: char) -> (bool, u16) {
+    let info = char_info(character);
+    (info.alpha(), info.range())
+}
+
+/// Mess-detector view of a character, memoized per code point.
+#[inline]
+fn char_info(character: char) -> CharInfo {
+    let codepoint = character as usize;
+    if codepoint >= CACHE_SIZE {
+        return CharInfo(pack(&compute_char_info(character)));
+    }
+    let bits = CACHE[codepoint].load(Ordering::Relaxed);
+    if bits & COMPUTED != 0 {
+        return CharInfo(bits);
+    }
+    let bits = pack(&compute_char_info(character));
+    CACHE[codepoint].store(bits, Ordering::Relaxed);
+    CharInfo(bits)
+}
+
+fn compute_char_info(character: char) -> CharFields {
+    let props = unicode::props(character);
+    let ascii = character.is_ascii();
+    let printable = props.printable(character);
+    let alpha = props.alpha();
+    let category = props.category;
+    let range: Option<&RangeInfo> = props.range();
+    let punct =
+        printable && (category.starts_with('P') || range.is_some_and(|range| range.punctuation));
+    let symbol = printable
+        && (category.starts_with('S')
+            || (!ascii
+                && (category.starts_with('N')
+                    || (range.is_some_and(|range| range.forms) && category != "Lo"))));
+    let separator = props.space
+        || matches!(character, '｜' | '+' | '<' | '>')
+        || category.starts_with('Z')
+        || matches!(category, "Po" | "Pd" | "Pc");
+    let flags = props.flags;
+
+    CharFields {
         printable,
         alpha,
-        upper,
-        lower,
-        space,
-        digit,
+        upper: props.upper,
+        lower: props.lower,
+        space: props.space,
+        digit: props.digit,
         ascii,
-        case_variable: lower != upper,
         flags,
-        accentuated,
-        latin,
-        cjk,
-        katakana: flags & KATAKANA != 0,
-        halfwidth_katakana: flags & HALFWIDTH_KATAKANA != 0,
-        arabic: flags & ARABIC != 0,
-        ligature: flags & LIGATURE != 0,
-        superscript: flags & SUPERSCRIPT != 0,
-        sentence_open_punctuation: flags & SENTENCE_OPEN_PUNCTUATION != 0,
-        glyph: flags & GLYPH_MASK != 0,
         punct,
         symbol,
-        range,
+        range: props.range,
         separator,
-        emoticon,
-        safe: ascii && safe_ascii.contains(&character),
-        common_cjk: cjk && common_cjk.contains(&character),
-        unaccented,
-    })
+        emoticon: !alpha && range.is_some_and(|range| range.emoticon),
+        safe: is_safe_ascii(character),
+        common_cjk: flags & CJK != 0 && is_common_cjk(character),
+        unaccented: props.unaccented,
+    }
 }
 
 #[derive(Default)]
@@ -150,10 +216,10 @@ struct Detectors {
     has_escape: bool,
     duplicate_count: usize,
     latin_count: usize,
-    last_latin: Option<(bool, bool, String)>,
+    last_latin: Option<(bool, bool, u32)>,
     suspicious_ranges: usize,
     range_count: usize,
-    last_range: Option<Option<String>>,
+    last_range: Option<u16>,
     word_count: usize,
     foreign_long_count: usize,
     character_count: usize,
@@ -202,92 +268,89 @@ impl Detectors {
         if ch == '\u{1b}' {
             self.has_escape = true;
         }
-        if !i.printable && !i.space && ch != '\u{1a}' && ch != '\u{feff}' {
+        if !i.printable() && !i.space() && ch != '\u{1a}' && ch != '\u{feff}' {
             self.unprintable += 1;
         }
         self.all_count += 1;
         self.feed_word(ch, i);
     }
 
-    fn feed_printable(&mut self, ch: char, i: &CharInfo, py: Python<'_>) -> PyResult<()> {
+    fn feed_printable(&mut self, ch: char, i: &CharInfo) {
         self.printable_count += 1;
-        if self.last_printable != Some(ch) && !i.safe {
-            if i.punct {
+        if self.last_printable != Some(ch) && !i.safe() {
+            if i.punct() {
                 self.punctuation += 1;
-            } else if !i.digit && i.symbol && !i.emoticon {
+            } else if !i.digit() && i.symbol() && !i.emoticon() {
                 self.symbols += 2;
             }
         }
         self.last_printable = Some(ch);
 
         self.range_count += 1;
-        if i.space || i.punct || i.safe {
+        if i.space() || i.punct() || i.safe() {
             self.last_range = None;
-            return Ok(());
+            return;
         }
-        if let Some(previous) = &self.last_range {
-            if previous != &i.range || previous.is_none() {
-                let suspicious =
-                    suspicious_ranges_impl(py, previous.as_deref(), i.range.as_deref())?;
-                if suspicious {
-                    self.suspicious_ranges += 1;
-                }
+        if let Some(previous) = self.last_range {
+            if (previous != i.range() || previous == unicode::NO_RANGE)
+                && unicode::suspicious_range_indices(previous, i.range())
+            {
+                self.suspicious_ranges += 1;
             }
         }
-        self.last_range = Some(i.range.clone());
-        Ok(())
+        self.last_range = Some(i.range());
     }
 
     fn feed_alpha(&mut self, i: &CharInfo) {
         self.alpha_count += 1;
-        if i.accentuated {
+        if i.accentuated() {
             self.accents += 1;
         }
-        if i.latin {
+        if i.latin() {
             self.latin_count += 1;
             if let Some((upper, accent, unaccented)) = &self.last_latin {
-                if i.accentuated && *accent {
-                    if i.upper && *upper {
+                if i.accentuated() && *accent {
+                    if i.upper() && *upper {
                         self.duplicate_count += 1;
                     }
-                    if i.unaccented == *unaccented {
+                    if i.unaccented() == *unaccented {
                         self.duplicate_count += 1;
                     }
                 }
             }
-            self.last_latin = Some((i.upper, i.accentuated, i.unaccented.clone()));
+            self.last_latin = Some((i.upper(), i.accentuated(), i.unaccented()));
         }
-        if i.cjk {
+        if i.cjk() {
             self.cjk_count += 1;
-            if !i.common_cjk {
+            if !i.common_cjk() {
                 self.uncommon_cjk += 1;
             }
         }
-        if i.cjk || i.katakana {
-            if i.katakana {
+        if i.cjk() || i.katakana() {
+            if i.katakana() {
                 self.katakana_count += 1;
-                if i.halfwidth_katakana {
+                if i.halfwidth_katakana() {
                     self.halfwidth_katakana += 1;
                 }
             } else {
                 self.katakana_cjk_count += 1;
-                if !i.common_cjk {
+                if !i.common_cjk() {
                     self.katakana_uncommon_cjk += 1;
                 }
             }
         }
-        if i.arabic {
+        if i.arabic() {
             self.arabic_count += 1;
-            if i.flags & ARABIC_ISOLATED_FORM != 0 {
+            if i.arabic_isolated_form() {
                 self.isolated_arabic += 1;
             }
         }
     }
 
     fn feed_archaic(&mut self, i: &CharInfo) {
-        let concerned = i.alpha && i.case_variable;
+        let concerned = i.alpha() && i.case_variable();
         if !concerned && self.archaic_chunk_count > 0 {
-            if self.archaic_chunk_count <= 64 && !i.digit && !self.archaic_ascii_only {
+            if self.archaic_chunk_count <= 64 && !i.digit() && !self.archaic_ascii_only {
                 self.archaic_final += self.archaic_current;
             }
             self.archaic_current = 0;
@@ -297,11 +360,11 @@ impl Detectors {
             self.archaic_ascii_only = true;
             return;
         }
-        if self.archaic_ascii_only && !i.ascii {
+        if self.archaic_ascii_only && !i.ascii() {
             self.archaic_ascii_only = false;
         }
         if self.archaic_chunk_count > 0 {
-            if (i.upper && self.archaic_last_lower) || (i.lower && self.archaic_last_upper) {
+            if (i.upper() && self.archaic_last_lower) || (i.lower() && self.archaic_last_upper) {
                 if self.archaic_buf {
                     self.archaic_current += 2;
                     self.archaic_buf = false;
@@ -314,34 +377,34 @@ impl Detectors {
         }
         self.archaic_count += 1;
         self.archaic_chunk_count += 1;
-        self.archaic_last_upper = i.upper;
-        self.archaic_last_lower = i.lower;
+        self.archaic_last_upper = i.upper();
+        self.archaic_last_lower = i.lower();
     }
 
     fn feed_word(&mut self, ch: char, i: &CharInfo) {
-        if i.alpha {
+        if i.alpha() {
             if self.buffer_last_ligature {
                 self.buffer_internal_ligature = true;
             }
-            self.buffer_last_ligature = i.ligature;
+            self.buffer_last_ligature = i.ligature();
             if self.buffer_length == 0 {
-                self.buffer_first_lower = i.lower;
+                self.buffer_first_lower = i.lower();
             }
             self.buffer_length += 1;
-            self.buffer_last_upper = i.upper;
-            if i.upper {
+            self.buffer_last_upper = i.upper();
+            if i.upper() {
                 self.buffer_uppers += 1;
             }
-            if !i.ascii {
+            if !i.ascii() {
                 self.buffer_non_ascii = true;
             }
-            self.buffer_last_accent = i.accentuated;
-            if i.accentuated {
+            self.buffer_last_accent = i.accentuated();
+            if i.accentuated() {
                 self.buffer_accents += 1;
             }
-            if i.glyph {
+            if i.glyph() {
                 self.buffer_glyphs += 1;
-            } else if !self.foreign_watch && (!i.latin || i.accentuated) {
+            } else if !self.foreign_watch && (!i.latin() || i.accentuated()) {
                 self.foreign_watch = true;
             }
             return;
@@ -349,11 +412,11 @@ impl Detectors {
         if self.buffer_length == 0 {
             return;
         }
-        if i.sentence_open_punctuation || (i.superscript && self.buffer_internal_ligature) {
+        if i.sentence_open_punctuation() || (i.superscript() && self.buffer_internal_ligature) {
             self.current_bad = true;
             self.current_invalid = true;
         }
-        if i.space || i.punct || i.separator {
+        if i.space() || i.punct() || i.separator() {
             self.word_count += 1;
             let length = self.buffer_length;
             self.character_count += length;
@@ -403,7 +466,8 @@ impl Detectors {
             self.buffer_non_ascii = false;
             self.buffer_last_ligature = false;
             self.buffer_internal_ligature = false;
-        } else if !matches!(ch, '<' | '>' | '-' | '=' | '~' | '|' | '_') && !i.digit && i.symbol {
+        } else if !matches!(ch, '<' | '>' | '-' | '=' | '~' | '|' | '_') && !i.digit() && i.symbol()
+        {
             self.current_bad = true;
             self.buffer_length += 1;
             self.buffer_last_accent = false;
@@ -485,58 +549,45 @@ impl Detectors {
     }
 }
 
-#[pyfunction(signature = (decoded_sequence, maximum_threshold=0.2, debug=false))]
-pub(crate) fn mess_ratio(
+/// Mess ratio of a decoded chunk; `debug` logs the per-detector breakdown.
+pub(crate) fn mess_ratio_impl(
     py: Python<'_>,
     decoded_sequence: &str,
     maximum_threshold: f64,
     debug: bool,
 ) -> PyResult<f64> {
-    let constants = constants(py)?;
-    let safe_ascii: HashSet<char> = constants
-        .getattr("COMMON_SAFE_ASCII_CHARACTERS")?
-        .extract::<HashSet<String>>()?
-        .into_iter()
-        .filter_map(|s| s.chars().next())
-        .collect();
-    let common_cjk: HashSet<char> = constants
-        .getattr("COMMON_CJK_CHARACTERS")?
-        .extract::<HashSet<String>>()?
-        .into_iter()
-        .filter_map(|s| s.chars().next())
-        .collect();
-    let chars: Vec<char> = decoded_sequence.chars().collect();
-    let step = if chars.len() < 511 {
+    let length = decoded_sequence.chars().count();
+    let step = if length < 511 {
         32
-    } else if chars.len() < 1024 {
+    } else if length < 1024 {
         64
     } else {
         128
     };
     let pure_ascii = decoded_sequence.is_ascii();
-    let mut cache = HashMap::<char, CharInfo>::new();
     let mut detectors = Detectors::new();
     let mut mean = 0.0;
     let mut completed = true;
-    for block in chars.chunks(step) {
-        for &ch in block {
-            if let std::collections::hash_map::Entry::Vacant(entry) = cache.entry(ch) {
-                entry.insert(char_info(py, ch, &safe_ascii, &common_cjk)?);
-            }
-            let info = &cache[&ch];
-            detectors.feed_always(ch, info);
+    let mut characters = decoded_sequence.chars();
+    let mut remaining = length;
+    while remaining > 0 {
+        let block = step.min(remaining);
+        remaining -= block;
+        for ch in characters.by_ref().take(block) {
+            let info = char_info(ch);
+            detectors.feed_always(ch, &info);
             if pure_ascii {
-                if info.printable {
-                    detectors.feed_printable(ch, info, py)?;
+                if info.printable() {
+                    detectors.feed_printable(ch, &info);
                 }
                 continue;
             }
-            detectors.feed_archaic(info);
-            if info.printable {
-                detectors.feed_printable(ch, info, py)?;
+            detectors.feed_archaic(&info);
+            if info.printable() {
+                detectors.feed_printable(ch, &info);
             }
-            if info.alpha {
-                detectors.feed_alpha(info);
+            if info.alpha() {
+                detectors.feed_alpha(&info);
             }
         }
         mean = detectors.ratios().iter().sum();
@@ -546,29 +597,37 @@ pub(crate) fn mess_ratio(
         }
     }
     if completed {
-        let newline = char_info(py, '\n', &safe_ascii, &common_cjk)?;
+        let newline = char_info('\n');
         detectors.feed_word('\n', &newline);
         if !pure_ascii {
             detectors.feed_archaic(&newline);
         }
-        if !newline.printable && !newline.space {
+        if !newline.printable() && !newline.space() {
             detectors.unprintable += 1;
         }
         detectors.all_count += 1;
         mean = detectors.ratios().iter().sum();
     }
     if debug {
-        let logger = py
-            .import("logging")?
-            .getattr("getLogger")?
-            .call1(("charset_normalizer",))?;
-        let trace = constants.getattr("TRACE")?;
-        logger.call_method1("log", (trace.clone(), format!("Mess-detector extended-analysis start. intermediary_mean_mess_ratio_calc={step} mean_mess_ratio={mean:?} maximum_threshold={maximum_threshold:?}")))?;
-        if chars.len() > 16 {
-            let start: String = chars.iter().take(16).collect();
-            let end: String = chars[chars.len() - 16..].iter().collect();
-            logger.call_method1("log", (trace.clone(), format!("Starting with: {start}")))?;
-            logger.call_method1("log", (trace.clone(), format!("Ending with: {end}")))?;
+        log(py, TRACE, || {
+            format!("Mess-detector extended-analysis start. intermediary_mean_mess_ratio_calc={step} mean_mess_ratio={mean:?} maximum_threshold={maximum_threshold:?}")
+        })?;
+        if length > 16 {
+            log(py, TRACE, || {
+                format!(
+                    "Starting with: {}",
+                    decoded_sequence.chars().take(16).collect::<String>()
+                )
+            })?;
+            log(py, TRACE, || {
+                format!(
+                    "Ending with: {}",
+                    decoded_sequence
+                        .chars()
+                        .skip(length - 16)
+                        .collect::<String>()
+                )
+            })?;
         }
         let names = [
             "TooManySymbolOrPunctuationPlugin",
@@ -583,17 +642,20 @@ pub(crate) fn mess_ratio(
             "ArabicIsolatedFormPlugin",
         ];
         for (name, ratio) in names.into_iter().zip(detectors.ratios()) {
-            logger.call_method1(
-                "log",
-                (
-                    trace.clone(),
-                    format!("<class 'charset_normalizer.md.{name}'>: {ratio:?}"),
-                ),
-            )?;
+            log(py, TRACE, || {
+                format!("<class 'charset_normalizer.md.{name}'>: {ratio:?}")
+            })?;
         }
     }
-    py.import("builtins")?
-        .getattr("round")?
-        .call1((mean, 3))?
-        .extract()
+    Ok(py_round(mean, 3))
+}
+
+#[pyfunction(signature = (decoded_sequence, maximum_threshold=0.2, debug=false))]
+pub(crate) fn mess_ratio(
+    py: Python<'_>,
+    decoded_sequence: &str,
+    maximum_threshold: f64,
+    debug: bool,
+) -> PyResult<f64> {
+    mess_ratio_impl(py, decoded_sequence, maximum_threshold, debug)
 }

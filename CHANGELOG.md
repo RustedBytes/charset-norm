@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   preserving the Python import and call surface.
 - Raised the minimum supported Python version to 3.8 and limited binary
   distributions to mainstream CPython desktop/server platforms.
+- The Rust core no longer calls back into Python while detecting: character
+  properties come from the ``unicode_names2``, ``unicode-general-category`` and
+  ``unicode-normalization`` crates, pattern matching from ``regex``, and every
+  supported codec (Unicode, single-byte code pages, CJK and ISO-2022) is decoded
+  natively from tables generated out of CPython (``bin/generate_native_tables.py``).
+  Detection is roughly 30x faster than the previous Rust build and faster than 3.5.1.
+- ``CharsetMatch.fingerprint`` is now a stable hash of the decoded text instead of
+  the process-salted ``hash(str)``.
+
+### Fixed
+- Chunk re-alignment no longer panics on multi-byte payloads whose signature is
+  shorter than the alignment probe (Python slice semantics are applied).
 
 ## [3.5.1](https://github.com/Ousret/charset_normalizer/compare/3.5.0...3.5.1) (2026-08-15)
 
