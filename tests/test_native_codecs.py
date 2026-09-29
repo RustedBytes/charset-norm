@@ -8,8 +8,8 @@ from os.path import dirname, join, realpath
 
 import pytest
 
-from charset_normalizer import _native
-from charset_normalizer.constant import IANA_SUPPORTED
+from charset_norm import _native
+from charset_norm.constant import IANA_SUPPORTED
 
 DIR_PATH = join(dirname(realpath(__file__)), "..", "data")
 
@@ -87,7 +87,7 @@ def test_native_decoding_matches_cpython(encoding: str) -> None:
 def test_detection_uses_no_python_codecs_or_unicodedata() -> None:
     script = """
 import sys
-import charset_normalizer
+import charset_norm
 
 payloads = [
     (text * 8).encode(encoding)
@@ -107,7 +107,7 @@ for name in list(sys.modules):
 
 before = set(sys.modules)
 for payload in payloads:
-    best = charset_normalizer.from_bytes(payload).best()
+    best = charset_norm.from_bytes(payload).best()
     assert best is not None
     str(best)
 loaded = sorted(

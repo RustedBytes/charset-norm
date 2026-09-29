@@ -16,18 +16,31 @@ use crate::tables::{
     NON_DECIMAL_DIGITS, UNICODE_RANGES,
 };
 
+/// Latin letter.
 pub const LATIN: u16 = 1;
+/// Letter carrying a common accent (grave, acute, cedilla, ...).
 pub const ACCENTUATED: u16 = 1 << 1;
+/// CJK ideograph or symbol.
 pub const CJK: u16 = 1 << 2;
+/// Hangul syllable or jamo.
 pub const HANGUL: u16 = 1 << 3;
+/// Katakana.
 pub const KATAKANA: u16 = 1 << 4;
+/// Hiragana.
 pub const HIRAGANA: u16 = 1 << 5;
+/// Thai.
 pub const THAI: u16 = 1 << 6;
+/// Arabic.
 pub const ARABIC: u16 = 1 << 7;
+/// Arabic presentation form, isolated.
 pub const ARABIC_ISOLATED_FORM: u16 = 1 << 8;
+/// Half-width katakana.
 pub const HALFWIDTH_KATAKANA: u16 = 1 << 9;
+/// Ligature (including Latin `AE`).
 pub const LIGATURE: u16 = 1 << 10;
+/// Superscript character.
 pub const SUPERSCRIPT: u16 = 1 << 11;
+/// Inverted `?` or `!`.
 pub const SENTENCE_OPEN_PUNCTUATION: u16 = 1 << 12;
 
 /// Two-letter general category, as `unicodedata.category` reports it.
@@ -164,16 +177,16 @@ pub fn remove_accent(character: char) -> char {
     composed
 }
 
-pub struct RangeInfo {
-    pub name: &'static str,
-    pub family: &'static str,
-    pub secondary: bool,
-    pub punctuation: bool,
-    pub forms: bool,
-    pub emoticon: bool,
+pub(crate) struct RangeInfo {
+    pub(crate) name: &'static str,
+    pub(crate) family: &'static str,
+    pub(crate) secondary: bool,
+    pub(crate) punctuation: bool,
+    pub(crate) forms: bool,
+    pub(crate) emoticon: bool,
 }
 
-pub fn ranges() -> &'static [RangeInfo] {
+pub(crate) fn ranges() -> &'static [RangeInfo] {
     static RANGES: OnceLock<Vec<RangeInfo>> = OnceLock::new();
     RANGES.get_or_init(|| {
         UNICODE_RANGES
@@ -190,7 +203,7 @@ pub fn ranges() -> &'static [RangeInfo] {
     })
 }
 
-pub const NO_RANGE: u16 = 0x3FF;
+pub(crate) const NO_RANGE: u16 = 0x3FF;
 
 fn range_index_uncached(codepoint: u32) -> u16 {
     let index = UNICODE_RANGES.partition_point(|entry| entry.0 <= codepoint);
@@ -205,16 +218,17 @@ fn range_index_uncached(codepoint: u32) -> u16 {
     }
 }
 
-pub fn range_of(character: char) -> Option<&'static RangeInfo> {
+pub(crate) fn range_of(character: char) -> Option<&'static RangeInfo> {
     let index = props(character).range;
     (index != NO_RANGE).then(|| &ranges()[index as usize])
 }
 
+/// Name of the Unicode block holding `character`.
 pub fn unicode_range(character: char) -> Option<&'static str> {
     range_of(character).map(|range| range.name)
 }
 
-pub fn range_index(name: &str) -> Option<usize> {
+pub(crate) fn range_index(name: &str) -> Option<usize> {
     ranges().iter().position(|range| range.name == name)
 }
 
@@ -224,7 +238,7 @@ fn compatible_families(a: &str, b: &str) -> bool {
 }
 
 /// `is_suspiciously_successive_range` on range table entries.
-pub fn suspicious_ranges(a: Option<&RangeInfo>, b: Option<&RangeInfo>) -> bool {
+pub(crate) fn suspicious_ranges(a: Option<&RangeInfo>, b: Option<&RangeInfo>) -> bool {
     let (Some(a), Some(b)) = (a, b) else {
         return true;
     };
@@ -250,7 +264,7 @@ pub fn suspicious_ranges(a: Option<&RangeInfo>, b: Option<&RangeInfo>) -> bool {
 
 /// `suspicious_ranges` by range-table index (`NO_RANGE` for none), memoized
 /// as a matrix over every pair of ranges.
-pub fn suspicious_range_indices(a: u16, b: u16) -> bool {
+pub(crate) fn suspicious_range_indices(a: u16, b: u16) -> bool {
     static MATRIX: OnceLock<(usize, Vec<bool>)> = OnceLock::new();
     if a == NO_RANGE || b == NO_RANGE {
         return true;
@@ -271,23 +285,23 @@ pub fn suspicious_range_indices(a: u16, b: u16) -> bool {
 
 /// Memoized per-character properties.
 #[derive(Clone, Copy)]
-pub struct Props {
-    pub category: &'static str,
-    pub upper: bool,
-    pub lower: bool,
-    pub space: bool,
-    pub digit: bool,
-    pub flags: u16,
-    pub range: u16,
-    pub unaccented: char,
+pub(crate) struct Props {
+    pub(crate) category: &'static str,
+    pub(crate) upper: bool,
+    pub(crate) lower: bool,
+    pub(crate) space: bool,
+    pub(crate) digit: bool,
+    pub(crate) flags: u16,
+    pub(crate) range: u16,
+    pub(crate) unaccented: char,
 }
 
 impl Props {
-    pub fn alpha(&self) -> bool {
+    pub(crate) fn alpha(&self) -> bool {
         self.category.starts_with('L')
     }
 
-    pub fn printable(&self, character: char) -> bool {
+    pub(crate) fn printable(&self, character: char) -> bool {
         character == ' '
             || !matches!(
                 self.category,
@@ -295,7 +309,7 @@ impl Props {
             )
     }
 
-    pub fn range(&self) -> Option<&'static RangeInfo> {
+    pub(crate) fn range(&self) -> Option<&'static RangeInfo> {
         (self.range != NO_RANGE).then(|| &ranges()[self.range as usize])
     }
 }
@@ -365,7 +379,7 @@ fn unpack(bits: u64) -> Props {
     }
 }
 
-pub fn props(character: char) -> Props {
+pub(crate) fn props(character: char) -> Props {
     let codepoint = character as usize;
     if codepoint >= CACHE_SIZE {
         return compute(character);
@@ -379,23 +393,27 @@ pub fn props(character: char) -> Props {
     value
 }
 
+/// Script and shape flags of a character (see the flag constants), derived
+/// from its Unicode name.
 pub fn character_flags(character: char) -> u16 {
     props(character).flags
 }
 
-pub fn is_safe_ascii(character: char) -> bool {
+pub(crate) fn is_safe_ascii(character: char) -> bool {
     character.is_ascii() && COMMON_SAFE_ASCII_CHARACTERS.contains(&character)
 }
 
-pub fn is_common_cjk(character: char) -> bool {
+pub(crate) fn is_common_cjk(character: char) -> bool {
     COMMON_CJK_CHARACTERS.binary_search(&character).is_ok()
 }
 
+/// Punctuation category, or a character from a punctuation block.
 pub fn is_punctuation(character: char) -> bool {
     let props = props(character);
     props.category.starts_with('P') || props.range().is_some_and(|range| range.punctuation)
 }
 
+/// Symbol or number, or a presentation form that is not a letter.
 pub fn is_symbol(character: char) -> bool {
     let props = props(character);
     props.category.starts_with('S')
@@ -403,10 +421,12 @@ pub fn is_symbol(character: char) -> bool {
         || (props.range().is_some_and(|range| range.forms) && props.category != "Lo")
 }
 
+/// Character from an emoticon or pictograph block.
 pub fn is_emoticon(character: char) -> bool {
     range_of(character).is_some_and(|range| range.emoticon)
 }
 
+/// Whitespace, separator or word-breaking punctuation.
 pub fn is_separator(character: char) -> bool {
     let props = props(character);
     props.space
@@ -415,14 +435,33 @@ pub fn is_separator(character: char) -> bool {
         || matches!(props.category, "Po" | "Pd" | "Pc")
 }
 
+/// Letter with distinct upper and lower case forms, in one of them.
 pub fn is_case_variable(character: char) -> bool {
     let props = props(character);
     props.lower != props.upper
 }
 
+/// Invisible control or format character (other than whitespace).
 pub fn is_unprintable(character: char) -> bool {
     let props = props(character);
     !props.space && !props.printable(character) && character != '\u{1a}' && character != '\u{feff}'
+}
+
+/// Whether two Unicode blocks (by name, as returned by [`unicode_range`]) are
+/// unlikely to follow each other in real text. `None` counts as suspicious.
+pub fn is_suspiciously_successive_range(
+    range_a: Option<&str>,
+    range_b: Option<&str>,
+) -> Result<bool, crate::Error> {
+    let (Some(a), Some(b)) = (range_a, range_b) else {
+        return Ok(true);
+    };
+    let info = |name: &str| {
+        range_index(name)
+            .map(|index| &ranges()[index])
+            .ok_or_else(|| crate::Error::UnknownRange(name.to_owned()))
+    };
+    Ok(suspicious_ranges(Some(info(a)?), Some(info(b)?)))
 }
 
 #[cfg(test)]

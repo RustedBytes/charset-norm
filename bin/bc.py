@@ -8,8 +8,8 @@ from sys import argv
 
 from chardet import detect as chardet_detect
 
-from charset_normalizer import detect as tbt_detect
-from charset_normalizer.utils import iana_name
+from charset_norm import detect as tbt_detect
+from charset_norm.utils import iana_name
 
 
 def calc_equivalence(content: bytes, cp_a: str, cp_b: str):
@@ -27,7 +27,7 @@ def calc_equivalence(content: bytes, cp_a: str, cp_b: str):
 
 def cli_bc(arguments: list[str]):
     parser = argparse.ArgumentParser(
-        description="BC script checker for Charset-Normalizer with Chardet"
+        description="BC script checker for charset-norm with Chardet"
     )
 
     parser.add_argument(
@@ -60,44 +60,42 @@ def cli_bc(arguments: list[str]):
         chardet_result = chardet_detect(content)
         chardet_encoding = chardet_result["encoding"]
 
-        charset_normalizer_result = tbt_detect(content)
-        charset_normalizer_encoding = charset_normalizer_result["encoding"]
+        charset_norm_result = tbt_detect(content)
+        charset_norm_encoding = charset_norm_result["encoding"]
 
-        if [chardet_encoding, charset_normalizer_encoding].count(None) == 1:
+        if [chardet_encoding, charset_norm_encoding].count(None) == 1:
             print(
-                f"⚡⚡ '{tbt_path}' (BC-Break) New('{charset_normalizer_encoding}') vs Legacy('{chardet_encoding}')"
+                f"⚡⚡ '{tbt_path}' (BC-Break) New('{charset_norm_encoding}') vs Legacy('{chardet_encoding}')"
             )
             continue
 
-        if charset_normalizer_encoding == chardet_encoding:
+        if charset_norm_encoding == chardet_encoding:
             success_count += 1
             print(f"✅✅ '{tbt_path}' (BC)")
             continue
 
         # Past the checks above, neither side can be None.
-        assert chardet_encoding is not None and charset_normalizer_encoding is not None
+        assert chardet_encoding is not None and charset_norm_encoding is not None
 
         if iana_name(chardet_encoding, False) == iana_name(
-            charset_normalizer_encoding, False
+            charset_norm_encoding, False
         ):
             success_count += 1
             print(f"✅✅ '{tbt_path}' (BC)")
             continue
 
-        calc_eq = calc_equivalence(
-            content, chardet_encoding, charset_normalizer_encoding
-        )
+        calc_eq = calc_equivalence(content, chardet_encoding, charset_norm_encoding)
 
         if calc_eq >= 0.98:
             success_count += 1
             print(
-                f"️✅ ️'{tbt_path}' (got '{charset_normalizer_encoding}' but "
+                f"️✅ ️'{tbt_path}' (got '{charset_norm_encoding}' but "
                 f"eq {chardet_encoding} WITH {round(calc_eq * 100.0, 3)} %)"
             )
             continue
 
         print(
-            f"⚡⚡ '{tbt_path}' (BC-Break) New('{charset_normalizer_encoding}') vs Legacy('{chardet_encoding}')"
+            f"⚡⚡ '{tbt_path}' (BC-Break) New('{charset_norm_encoding}') vs Legacy('{chardet_encoding}')"
         )
 
     success_ratio = round(success_count / total_count, 2) * 100.0

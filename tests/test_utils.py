@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from charset_normalizer.constant import IANA_SUPPORTED
-from charset_normalizer.utils import (
+from charset_norm.constant import IANA_SUPPORTED
+from charset_norm.utils import (
     cp_similarity,
     iana_name,
     is_accentuated,

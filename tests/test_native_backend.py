@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import inspect
 
-from charset_normalizer import _native
-from charset_normalizer.cd import (
+from charset_norm import _native
+from charset_norm.cd import (
     alpha_unicode_split,
     alphabet_languages,
     characters_popularity_compare,
@@ -13,9 +13,9 @@ from charset_normalizer.cd import (
     mb_encoding_languages,
     merge_coherence_ratios,
 )
-from charset_normalizer.md import mess_ratio
-from charset_normalizer.models import CharsetMatch, CharsetMatches, CliDetectionResult
-from charset_normalizer.utils import (
+from charset_norm.md import mess_ratio
+from charset_norm.models import CharsetMatch, CharsetMatches, CliDetectionResult
+from charset_norm.utils import (
     any_specified_encoding,
     iana_name,
     identify_sig_or_bom,
@@ -86,7 +86,7 @@ def test_native_character_and_detection_contract() -> None:
 
 def test_native_result_models_keep_python_contract() -> None:
     match = CharsetMatch(b"caf\xe9", "latin_1", 0.1, False, [("French", 0.8)])
-    assert type(match).__module__ == "charset_normalizer.models"
+    assert type(match).__module__ == "charset_norm.models"
     assert str(match) == "café"
     assert match.language == "French"
     assert match.output() == "café".encode()

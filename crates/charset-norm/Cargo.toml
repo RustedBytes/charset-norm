@@ -1,0 +1,34 @@
+[package]
+name = "charset-norm"
+description = "Universal character encoding detector: a Rust implementation of charset_normalizer"
+readme = "README.md"
+keywords = ["charset", "encoding", "detection", "chardet", "unicode"]
+categories = ["encoding", "text-processing", "internationalization"]
+documentation = "https://docs.rs/charset-norm"
+include = ["src/**/*", "tests/**/*", "examples/**/*", "README.md", "LICENSE"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Forward detection diagnostics to the `log` crate (see `charset_norm::log::LogCrate`).
+log = ["dep:log"]
+
+[dependencies]
+log = { version = "0.4", optional = true }
+regex = "1.13"
+rustc-hash = "2.1"
+unicode-general-category = "1.1"
+unicode-normalization = "0.1.25"
+unicode_names2 = "4.0"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

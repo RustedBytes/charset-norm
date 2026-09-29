@@ -31,13 +31,21 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 name = "charset-norm"
 version = "3.5.1"
 dependencies = [
- "mimalloc",
- "pyo3",
+ "log",
  "regex",
  "rustc-hash",
  "unicode-general-category",
  "unicode-normalization",
  "unicode_names2",
+]
+
+[[package]]
+name = "charset-norm-python"
+version = "3.5.1"
+dependencies = [
+ "charset-norm",
+ "mimalloc",
+ "pyo3",
 ]
 
 [[package]]
@@ -77,6 +85,12 @@ checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "log"
+version = "0.4.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "memchr"

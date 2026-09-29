@@ -11,8 +11,8 @@ from sys import argv
 from chardet import __version__ as chardet_version
 from chardet import detect as chardet_detect
 
-from charset_normalizer import __version__, from_bytes
-from charset_normalizer.utils import iana_name
+from charset_norm import __version__, from_bytes
+from charset_norm.utils import iana_name
 
 
 def calc_equivalence(content: bytes, cp_a: str, cp_b: str):
@@ -70,7 +70,7 @@ def evaluate_result(
 
 def cli_coverage(arguments: list[str]):
     parser = argparse.ArgumentParser(
-        description="Embedded detection success coverage script checker for Charset-Normalizer"
+        description="Embedded detection success coverage script checker for charset-norm"
     )
 
     parser.add_argument(
@@ -105,9 +105,9 @@ def cli_coverage(arguments: list[str]):
         )
         sys.exit(1)
 
-    print(f"> using charset-normalizer {__version__} and chardet {chardet_version}")
+    print(f"> using charset-norm {__version__} and chardet {chardet_version}")
 
-    charset_normalizer_success_count = 0
+    charset_norm_success_count = 0
     chardet_success_count = 0
     total_count = 0
 
@@ -120,45 +120,41 @@ def cli_coverage(arguments: list[str]):
 
         matches = from_bytes(content, preemptive_behaviour=args.preemptive)
         best_match = matches.best()
-        charset_normalizer_encoding = (
-            best_match.encoding if best_match is not None else None
-        )
+        charset_norm_encoding = best_match.encoding if best_match is not None else None
         chardet_encoding = chardet_detect(content)["encoding"]
 
-        charset_normalizer_success, charset_normalizer_detail = evaluate_result(
-            content, expected_encoding, charset_normalizer_encoding
+        charset_norm_success, charset_norm_detail = evaluate_result(
+            content, expected_encoding, charset_norm_encoding
         )
         chardet_success, chardet_detail = evaluate_result(
             content, expected_encoding, chardet_encoding
         )
 
-        charset_normalizer_success_count += charset_normalizer_success
+        charset_norm_success_count += charset_norm_success
         chardet_success_count += chardet_success
-        charset_normalizer_mark = "✅" if charset_normalizer_success else "⚡"
+        charset_norm_mark = "✅" if charset_norm_success else "⚡"
         chardet_mark = "✅" if chardet_success else "⚡"
         if not args.quiet:
             print(
-                f"{tbt_path}: CN {charset_normalizer_mark} "
-                f"({charset_normalizer_detail}) | "
+                f"{tbt_path}: CN {charset_norm_mark} "
+                f"({charset_norm_detail}) | "
                 f"Chardet {chardet_mark} ({chardet_detail})"
             )
 
-    charset_normalizer_success_ratio = (
-        charset_normalizer_success_count / total_count * 100.0
-    )
+    charset_norm_success_ratio = charset_norm_success_count / total_count * 100.0
     chardet_success_ratio = chardet_success_count / total_count * 100.0
 
     print(
-        "Charset-Normalizer coverage = "
-        f"{charset_normalizer_success_ratio:.3f} % "
-        f"({charset_normalizer_success_count} / {total_count} files)"
+        "charset-norm coverage = "
+        f"{charset_norm_success_ratio:.3f} % "
+        f"({charset_norm_success_count} / {total_count} files)"
     )
     print(
         f"Chardet coverage = {chardet_success_ratio:.3f} % "
         f"({chardet_success_count} / {total_count} files)"
     )
 
-    return 0 if charset_normalizer_success_ratio >= args.coverage else 1
+    return 0 if charset_norm_success_ratio >= args.coverage else 1
 
 
 if __name__ == "__main__":

@@ -132,7 +132,7 @@ def is_cp_similar(iana_name_a: str, iana_name_b: str) -> bool:
 
 
 def set_logging_handler(
-    name: str = "charset_normalizer",
+    name: str = "charset_norm",
     level: int = logging.INFO,
     format_string: str = "%(asctime)s | %(levelname)s | %(message)s",
 ) -> None:

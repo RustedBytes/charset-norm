@@ -9,7 +9,7 @@ from .constant import IANA_SUPPORTED, TRACE
 from .models import CharsetMatches
 from .utils import is_multi_byte_encoding
 
-logger: logging.Logger = logging.getLogger("charset_normalizer")
+logger: logging.Logger = logging.getLogger("charset_norm")
 explain_handler: logging.StreamHandler[TextIO] = logging.StreamHandler()
 explain_handler.setFormatter(
     logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")

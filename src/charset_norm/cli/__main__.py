@@ -7,9 +7,9 @@ from os.path import abspath, basename, dirname, join, realpath
 from platform import python_version
 from unicodedata import unidata_version
 
-from charset_normalizer import _native, from_fp
-from charset_normalizer.models import CliDetectionResult
-from charset_normalizer.version import __version__
+from charset_norm import _native, from_fp
+from charset_norm.models import CliDetectionResult
+from charset_norm.version import __version__
 
 
 def query_yes_no(question: str, default: str = "yes") -> bool:  # Defensive:
@@ -170,7 +170,7 @@ def cli_detect(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--version",
         action="version",
-        version="Charset-Normalizer {} - Python {} - Unicode {} - SpeedUp {}".format(
+        version="charset-norm {} - Python {} - Unicode {} - SpeedUp {}".format(
             __version__,
             python_version(),
             unidata_version,

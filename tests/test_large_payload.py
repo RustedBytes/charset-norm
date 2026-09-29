@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from charset_normalizer import from_bytes
-from charset_normalizer.constant import TOO_BIG_SEQUENCE
+from charset_norm import from_bytes
+from charset_norm.constant import TOO_BIG_SEQUENCE
 
 
 def test_large_payload_u8_sig_basic_entry():

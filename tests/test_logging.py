@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from charset_normalizer.api import explain_handler, from_bytes
-from charset_normalizer.constant import TRACE
-from charset_normalizer.utils import set_logging_handler
+from charset_norm.api import explain_handler, from_bytes
+from charset_norm.constant import TRACE
+from charset_norm.utils import set_logging_handler
 
 
 class TestLogBehaviorClass:
     def setup_method(self):
-        self.logger = logging.getLogger("charset_normalizer")
+        self.logger = logging.getLogger("charset_norm")
         self.logger.handlers.clear()
         self.logger.addHandler(logging.NullHandler())
         self.logger.level = logging.WARNING
@@ -33,18 +33,18 @@ class TestLogBehaviorClass:
         assert "Encoding detection: ascii is most likely the one." in caplog.text
 
     def test_set_stream_handler(self, caplog):
-        set_logging_handler("charset_normalizer", level=logging.DEBUG)
+        set_logging_handler("charset_norm", level=logging.DEBUG)
         self.logger.debug("log content should log with default format")
         for record in caplog.records:
             assert record.levelname in ["Level 5", "DEBUG"]
         assert "log content should log with default format" in caplog.text
 
     def test_set_stream_handler_format(self, caplog):
-        set_logging_handler("charset_normalizer", format_string="%(message)s")
+        set_logging_handler("charset_norm", format_string="%(message)s")
         self.logger.info("log content should only be this message")
         assert caplog.record_tuples == [
             (
-                "charset_normalizer",
+                "charset_norm",
                 logging.INFO,
                 "log content should only be this message",
             )

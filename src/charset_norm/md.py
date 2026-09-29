@@ -1051,7 +1051,7 @@ def mess_ratio(
         )
 
     if debug:  # Defensive:
-        logger = getLogger("charset_normalizer")
+        logger = getLogger("charset_norm")
 
         logger.log(
             TRACE,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from os import pardir, path
 
-from charset_normalizer.api import from_path
+from charset_norm.api import from_path
 
 DIR_PATH = path.join(path.dirname(path.realpath(__file__)), pardir)
 

@@ -63,8 +63,9 @@ dev = [
 ]
 
 [tool.maturin]
+manifest-path = "crates/charset-norm-python/Cargo.toml"
 bindings = "pyo3"
-module-name = "charset_normalizer._native"
+module-name = "charset_norm._native"
 python-source = "src"
 features = ["pyo3/abi3-py38"]
 include = [
@@ -75,7 +76,7 @@ include = [
 ]
 
 [project.scripts]
-normalizer = "charset_normalizer.cli:cli_detect"
+normalizer = "charset_norm.cli:cli_detect"
 
 [project.urls]
 "Changelog" = "https://github.com/RustedBytes/charset-norm/blob/main/CHANGELOG.md"
@@ -84,19 +85,19 @@ normalizer = "charset_normalizer.cli:cli_detect"
 "Issue tracker" = "https://github.com/RustedBytes/charset-norm/issues"
 
 [tool.coverage.run]
-source = ["charset_normalizer"]
+source = ["charset_norm"]
 # Needed for Python 3.11 and lower
 disable_warnings = ["no-sysmon"]
 
 [tool.coverage.paths]
 source = [
-  "src/charset_normalizer",
-  "*/charset_normalizer",
-  "*\\charset_normalizer",
+  "src/charset_norm",
+  "*/charset_norm",
+  "*\\charset_norm",
 ]
 
 [tool.coverage.report]
-omit = ["src/charset_normalizer/__main__.py"]
+omit = ["src/charset_norm/__main__.py"]
 exclude_lines = [
   "except ModuleNotFoundError:",
   "except ImportError:",

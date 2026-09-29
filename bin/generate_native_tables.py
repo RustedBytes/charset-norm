@@ -3,11 +3,11 @@ Generate the static tables used by the native (Rust) core.
 
 The extension must not call back into Python at runtime, so every constant
 and every codec it relies on is materialized here once, from the reference
-implementation (``charset_normalizer.constant`` and CPython's codecs):
+implementation (``charset_norm.constant`` and CPython's codecs):
 
-* ``rust/generated/constants.rs`` - detection constants, Unicode ranges,
+* ``crates/charset-norm/src/generated/constants.rs`` - detection constants, Unicode ranges,
   language frequencies, IANA aliases and single-byte code pages.
-* ``rust/generated/cjk.bin`` - decoding tables for CPython's CJK codecs,
+* ``crates/charset-norm/src/generated/cjk.bin`` - decoding tables for CPython's CJK codecs,
   obtained by exhaustively probing each codec.
 
 Run from the repository root with the interpreter whose codecs are the
@@ -25,12 +25,12 @@ from encodings.aliases import aliases
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "rust" / "generated"
+OUT = ROOT / "crates" / "charset-norm" / "src" / "generated"
 
 # Load constant.py directly: importing the package would require the
 # extension module we are generating tables for.
 _spec = importlib.util.spec_from_file_location(
-    "cn_constant", ROOT / "src" / "charset_normalizer" / "constant.py"
+    "cn_constant", ROOT / "src" / "charset_norm" / "constant.py"
 )
 assert _spec is not None and _spec.loader is not None
 constant = importlib.util.module_from_spec(_spec)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from charset_normalizer import from_bytes
+from charset_norm import from_bytes
 
 
 def test_unicode_edge_case():

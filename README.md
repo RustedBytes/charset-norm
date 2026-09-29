@@ -4,13 +4,17 @@ A Rust rewrite of [charset_normalizer](https://github.com/jawah/charset_normaliz
 the universal charset detector for Python.
 
 The detection core (codecs, Unicode tables, mess and coherence analysis) is
-implemented in Rust and exposed through PyO3, while the Python package keeps the
-original `charset_normalizer` import path and API.
+the [`charset-norm`](crates/charset-norm) Rust crate, usable on its own; the
+`charset_norm` Python package wraps it through PyO3 and keeps the original
+charset_normalizer API.
+
+| Path | What |
+|------|------|
+| `crates/charset-norm` | Rust library (publishable to crates.io) |
+| `crates/charset-norm-python` | PyO3 bindings built as `charset_norm._native` |
+| `src/charset_norm` | Python package |
 
 ## Installation
-
-The distribution is named `charset-norm` and provides the `charset_normalizer`
-module, so do not install it alongside the original `charset-normalizer`.
 
 Requires Python 3.8+ and, when building from source, Rust 1.83+.
 
@@ -21,7 +25,7 @@ pip install git+https://github.com/RustedBytes/charset-norm.git
 ## Usage
 
 ```python
-from charset_normalizer import from_bytes, from_path
+from charset_norm import from_bytes, from_path
 
 best = from_path("./my_subtitle.srt").best()
 print(best.encoding, str(best))
@@ -33,7 +37,7 @@ print(from_bytes(payload).best().encoding)  # cp1251
 A chardet-compatible `detect()` is also available:
 
 ```python
-from charset_normalizer import detect
+from charset_norm import detect
 ```
 
 Command line:
@@ -42,6 +46,22 @@ Command line:
 normalizer ./data/sample-french.txt
 ```
 
+## Rust
+
+```toml
+[dependencies]
+charset-norm = "3.5"
+```
+
+```rust
+let results = charset_norm::from_bytes(&payload);
+if let Some(best) = results.best() {
+    println!("{} {}", best.encoding(), best.decoded()?);
+}
+```
+
+See the [crate README](crates/charset-norm/README.md) for more.
+
 ## Development
 
 ```sh
@@ -49,6 +69,7 @@ pip install maturin
 maturin develop --release
 pip install --group dev
 pytest
+cargo test --workspace --all-features
 ```
 
 ## License

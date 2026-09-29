@@ -7,7 +7,7 @@ from os import pardir, path
 
 import pytest
 
-from charset_normalizer import is_binary
+from charset_norm import is_binary
 
 DIR_PATH = path.join(path.dirname(path.realpath(__file__)), pardir)
 

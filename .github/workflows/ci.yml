@@ -19,10 +19,16 @@ jobs:
         run: rustup toolchain install 1.83.0 --profile minimal --component rustfmt,clippy
       - name: Check formatting
         run: cargo +1.83.0 fmt --check
-      - name: Lint native core
-        run: cargo +1.83.0 clippy --all-targets -- -D warnings
-      - name: Test native core
-        run: cargo +1.83.0 test
+      - name: Lint crates
+        run: cargo +1.83.0 clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test crates
+        run: cargo +1.83.0 test --workspace --all-features
+      - name: Build documentation
+        run: cargo +1.83.0 doc -p charset-norm --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+      - name: Check the charset-norm crate can be published
+        run: cargo +1.83.0 publish -p charset-norm --dry-run
 
   lint:
     name: 🎨 Linters

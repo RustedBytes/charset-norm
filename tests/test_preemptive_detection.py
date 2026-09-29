@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from charset_normalizer import CharsetMatch
-from charset_normalizer.utils import any_specified_encoding
+from charset_norm import CharsetMatch
+from charset_norm.utils import any_specified_encoding
 
 
 @pytest.mark.parametrize(

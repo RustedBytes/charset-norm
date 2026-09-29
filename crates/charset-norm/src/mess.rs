@@ -1,13 +1,14 @@
+//! Mess (noise) detection: how implausible decoded text looks.
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use pyo3::prelude::*;
-
+use crate::log::{emit, Level, Logger, NoLogger};
+use crate::pyfloat;
 use crate::unicode::{
     self, is_common_cjk, is_safe_ascii, RangeInfo, ACCENTUATED, ARABIC, ARABIC_ISOLATED_FORM, CJK,
     HALFWIDTH_KATAKANA, HANGUL, HIRAGANA, KATAKANA, LATIN, LIGATURE, SENTENCE_OPEN_PUNCTUATION,
     SUPERSCRIPT, THAI,
 };
-use crate::{log, py_round, tables::TRACE};
 
 const GLYPH_MASK: u16 = CJK | HANGUL | KATAKANA | HIRAGANA | THAI;
 
@@ -549,13 +550,24 @@ impl Detectors {
     }
 }
 
-/// Mess ratio of a decoded chunk; `debug` logs the per-detector breakdown.
-pub(crate) fn mess_ratio_impl(
-    py: Python<'_>,
+/// Mess ratio of decoded text: 0 for clean text, growing with noise.
+///
+/// Analysis stops early once the ratio reaches `maximum_threshold`.
+///
+/// ```
+/// assert_eq!(charset_norm::mess::mess_ratio("plain text", 0.2), 0.0);
+/// ```
+pub fn mess_ratio(decoded_sequence: &str, maximum_threshold: f64) -> f64 {
+    mess_ratio_with(decoded_sequence, maximum_threshold, false, &NoLogger)
+}
+
+/// [`mess_ratio`], optionally tracing the per-detector breakdown to `logger`.
+pub fn mess_ratio_with(
     decoded_sequence: &str,
     maximum_threshold: f64,
     debug: bool,
-) -> PyResult<f64> {
+    logger: &dyn Logger,
+) -> f64 {
     let length = decoded_sequence.chars().count();
     let step = if length < 511 {
         32
@@ -609,17 +621,17 @@ pub(crate) fn mess_ratio_impl(
         mean = detectors.ratios().iter().sum();
     }
     if debug {
-        log(py, TRACE, || {
+        emit(logger, Level::Trace, || {
             format!("Mess-detector extended-analysis start. intermediary_mean_mess_ratio_calc={step} mean_mess_ratio={mean:?} maximum_threshold={maximum_threshold:?}")
-        })?;
+        });
         if length > 16 {
-            log(py, TRACE, || {
+            emit(logger, Level::Trace, || {
                 format!(
                     "Starting with: {}",
                     decoded_sequence.chars().take(16).collect::<String>()
                 )
-            })?;
-            log(py, TRACE, || {
+            });
+            emit(logger, Level::Trace, || {
                 format!(
                     "Ending with: {}",
                     decoded_sequence
@@ -627,7 +639,7 @@ pub(crate) fn mess_ratio_impl(
                         .skip(length - 16)
                         .collect::<String>()
                 )
-            })?;
+            });
         }
         let names = [
             "TooManySymbolOrPunctuationPlugin",
@@ -642,20 +654,10 @@ pub(crate) fn mess_ratio_impl(
             "ArabicIsolatedFormPlugin",
         ];
         for (name, ratio) in names.into_iter().zip(detectors.ratios()) {
-            log(py, TRACE, || {
-                format!("<class 'charset_normalizer.md.{name}'>: {ratio:?}")
-            })?;
+            emit(logger, Level::Trace, || {
+                format!("<class 'charset_norm.md.{name}'>: {ratio:?}")
+            });
         }
     }
-    Ok(py_round(mean, 3))
-}
-
-#[pyfunction(signature = (decoded_sequence, maximum_threshold=0.2, debug=false))]
-pub(crate) fn mess_ratio(
-    py: Python<'_>,
-    decoded_sequence: &str,
-    maximum_threshold: f64,
-    debug: bool,
-) -> PyResult<f64> {
-    mess_ratio_impl(py, decoded_sequence, maximum_threshold, debug)
+    pyfloat::round(mean, 3)
 }

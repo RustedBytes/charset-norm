@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from charset_normalizer.api import from_bytes
-from charset_normalizer.models import CharsetMatch, CharsetMatches
+from charset_norm.api import from_bytes
+from charset_norm.models import CharsetMatch, CharsetMatches
 
 
 def test_empty():

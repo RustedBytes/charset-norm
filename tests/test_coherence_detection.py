@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from charset_normalizer.cd import (
+from charset_norm.cd import (
     characters_popularity_compare,
     encoding_languages,
     filter_alt_coherence_matches,

@@ -1,14 +1,10 @@
-//! Static detection data, generated from `charset_normalizer.constant`.
+//! Static detection data, generated from `charset_norm.constant`.
 
 use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
 include!("generated/constants.rs");
-
-pub const TOO_SMALL_SEQUENCE: usize = 32;
-pub const TOO_BIG_SEQUENCE: usize = 10_000_000;
-pub const TRACE: i32 = 5;
 
 fn sorted_lookup<V: Copy>(table: &[(&'static str, V)], key: &str) -> Option<V> {
     table

@@ -1,111 +1,154 @@
+//! The detector.
+
 use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use pyo3::exceptions::PyTypeError;
-use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyByteArray, PyBytes};
+use crate::chunks::ChunkCutter;
+use crate::codecs::{self, DecodeError, Errors};
+use crate::encoding::{self, any_specified_encoding, identify_sig_or_bom, should_strip_sig_or_bom};
+use crate::log::{emit, Level, Logger, NoLogger};
+use crate::matches::{CharsetMatch, CharsetMatches, PendingMatches};
+use crate::{coherence, mess, pyfloat, TOO_BIG_SEQUENCE, TOO_SMALL_SEQUENCE};
 
-use super::codecs::{self, DecodeError, Errors};
-use super::mess::mess_ratio_impl;
-use super::models::{CharsetMatch, CharsetMatches};
-use super::tables::{self, IANA_SUPPORTED_MB_FIRST, TOO_BIG_SEQUENCE, TOO_SMALL_SEQUENCE, TRACE};
-use super::{
-    coherence, iana_name_impl, log, mb_languages, merge_coherence, py_sum, should_strip_sig_or_bom,
-    sig_or_bom, single_byte_languages, specified_encoding, ChunkCutter, DEBUG,
-};
+/// Tuning knobs of [`from_bytes_with`]. The defaults match the reference
+/// implementation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DetectionOptions {
+    /// Number of chunks sampled from the payload.
+    pub steps: usize,
+    /// Size of each sampled chunk, in bytes.
+    pub chunk_size: usize,
+    /// Maximum acceptable mess ratio (chaos) for a candidate.
+    pub threshold: f64,
+    /// Only try these encodings (any alias) when not empty.
+    pub cp_isolation: Vec<String>,
+    /// Never try these encodings (any alias).
+    pub cp_exclusion: Vec<String>,
+    /// Favour an encoding declared inside the payload (e.g. HTML `charset`).
+    pub preemptive_behaviour: bool,
+    /// Trace the mess analysis when one or two encodings are isolated.
+    pub explain: bool,
+    /// Minimum coherence for a language to be reported.
+    pub language_threshold: f64,
+    /// Fall back on ASCII/UTF-8/declared encodings when nothing else fits.
+    pub enable_fallback: bool,
+}
+
+impl Default for DetectionOptions {
+    fn default() -> Self {
+        Self {
+            steps: 5,
+            chunk_size: 512,
+            threshold: 0.2,
+            cp_isolation: Vec::new(),
+            cp_exclusion: Vec::new(),
+            preemptive_behaviour: true,
+            explain: false,
+            language_threshold: 0.1,
+            enable_fallback: true,
+        }
+    }
+}
 
 fn decode(bytes: &[u8], encoding: &str) -> Result<String, DecodeError> {
     codecs::decode(bytes, encoding, Errors::Strict)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn new_match(
-    py: Python<'_>,
-    payload: &Bound<'_, PyAny>,
-    encoding: &str,
-    chaos: f64,
-    bom: bool,
-    languages: Vec<(String, f64)>,
-    decoded: Option<String>,
-    declaration: Option<&str>,
-) -> PyResult<Py<CharsetMatch>> {
-    Py::new(
-        py,
-        CharsetMatch::create(
-            py,
-            payload.clone().unbind(),
-            encoding.to_owned(),
+/// Detect the plausible encodings of `payload` with default options.
+///
+/// ```
+/// use charset_norm::codecs;
+///
+/// let text = "Всеки човек има право на образование. Образованието трябва да бъде безплатно.";
+/// let payload = codecs::encode(text, "cp1251").unwrap();
+///
+/// let results = charset_norm::from_bytes(&payload);
+/// let best = results.best().unwrap();
+/// assert_eq!(best.encoding(), "cp1251");
+/// assert_eq!(best.decoded().unwrap(), text);
+/// ```
+pub fn from_bytes(payload: &[u8]) -> CharsetMatches {
+    from_bytes_with(payload, &DetectionOptions::default(), &NoLogger)
+}
+
+/// Read a file and detect its plausible encodings with default options.
+pub fn from_path(path: impl AsRef<Path>) -> std::io::Result<CharsetMatches> {
+    Ok(from_bytes(&std::fs::read(path)?))
+}
+
+/// Whether `payload` looks like binary data rather than text.
+pub fn is_binary(payload: &[u8]) -> bool {
+    let options = DetectionOptions {
+        enable_fallback: false,
+        ..DetectionOptions::default()
+    };
+    from_bytes_with(payload, &options, &NoLogger).is_empty()
+}
+
+/// Detect the plausible encodings of `payload`, reporting progress to
+/// `logger`.
+pub fn from_bytes_with(
+    payload: &[u8],
+    options: &DetectionOptions,
+    logger: &dyn Logger,
+) -> CharsetMatches {
+    detect(Arc::from(payload), options, logger)
+}
+
+/// [`from_bytes_with`] for a payload that is already shared.
+pub fn detect(
+    payload: Arc<[u8]>,
+    options: &DetectionOptions,
+    logger: &dyn Logger,
+) -> CharsetMatches {
+    let bytes: &[u8] = &payload;
+    let length = bytes.len();
+    let threshold = options.threshold;
+    let new_match = |encoding: &str,
+                     chaos: f64,
+                     bom: bool,
+                     languages: Vec<(String, f64)>,
+                     decoded: Option<String>,
+                     declaration: Option<&str>| {
+        CharsetMatch::new(
+            payload.clone(),
+            encoding,
             chaos,
             bom,
             languages,
             decoded,
             declaration.map(str::to_owned),
-        )?,
-    )
-}
-
-fn new_matches(py: Python<'_>, entries: Vec<Py<CharsetMatch>>) -> PyResult<Py<CharsetMatches>> {
-    Py::new(py, CharsetMatches::from_results(py, entries)?)
-}
-
-#[pyfunction(signature = (sequences, steps=5, chunk_size=512, threshold=0.2, cp_isolation=None, cp_exclusion=None, preemptive_behaviour=true, explain=false, language_threshold=0.1, enable_fallback=true))]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn from_bytes(
-    py: Python<'_>,
-    sequences: &Bound<'_, PyAny>,
-    mut steps: usize,
-    mut chunk_size: usize,
-    threshold: f64,
-    cp_isolation: Option<Vec<String>>,
-    cp_exclusion: Option<Vec<String>>,
-    preemptive_behaviour: bool,
-    explain: bool,
-    language_threshold: f64,
-    enable_fallback: bool,
-) -> PyResult<Py<CharsetMatches>> {
-    if !sequences.is_instance_of::<PyBytes>() && !sequences.is_instance_of::<PyByteArray>() {
-        return Err(PyTypeError::new_err(format!(
-            "Expected object of type bytes or bytearray, got: {}",
-            sequences.get_type()
-        )));
-    }
-    let owned_bytes: Vec<u8>;
-    let bytes: &[u8] = if let Ok(value) = sequences.cast::<PyBytes>() {
-        value.as_bytes()
-    } else {
-        owned_bytes = sequences.extract()?;
-        &owned_bytes
+        )
     };
-    let length = bytes.len();
 
     if length == 0 {
-        log(py, DEBUG, || {
+        emit(logger, Level::Debug, || {
             "Encoding detection on empty bytes, assuming utf_8 intention.".to_owned()
-        })?;
-        let entry = new_match(
-            py,
-            sequences,
+        });
+        return CharsetMatches::from_sorted(vec![new_match(
             "utf_8",
             0.0,
             false,
             Vec::new(),
             Some(String::new()),
             None,
-        )?;
-        return new_matches(py, vec![entry]);
+        )]);
     }
 
-    let normalize = |values: Option<Vec<String>>| -> PyResult<Vec<String>> {
+    let normalize = |values: &[String]| -> Vec<String> {
         values
-            .unwrap_or_default()
-            .into_iter()
-            .map(|value| iana_name_impl(&value, false))
+            .iter()
+            .map(|value| encoding::iana_name(value, false).unwrap_or_default())
             .collect()
     };
-    let isolation = normalize(cp_isolation)?;
-    let exclusion = normalize(cp_exclusion)?;
+    let isolation = normalize(&options.cp_isolation);
+    let exclusion = normalize(&options.cp_exclusion);
 
+    let mut steps = options.steps;
+    let mut chunk_size = options.chunk_size;
     if length <= chunk_size.saturating_mul(steps) {
         steps = 1;
         chunk_size = length;
@@ -116,13 +159,13 @@ pub(crate) fn from_bytes(
     let is_too_small = length < TOO_SMALL_SEQUENCE;
     let is_too_large = length >= TOO_BIG_SEQUENCE;
     if is_too_small {
-        log(py, TRACE, || {
+        emit(logger, Level::Trace, || {
             format!("Trying to detect encoding from a tiny portion of ({length}) byte(s).")
-        })?;
+        });
     }
 
-    let specified = if preemptive_behaviour {
-        specified_encoding(bytes, 8192)
+    let specified = if options.preemptive_behaviour {
+        any_specified_encoding(bytes, 8192)
     } else {
         None
     };
@@ -130,7 +173,7 @@ pub(crate) fn from_bytes(
     if let Some(value) = specified {
         prioritized.push(value);
     }
-    let (sig_encoding, sig) = sig_or_bom(bytes);
+    let (sig_encoding, sig) = identify_sig_or_bom(bytes);
     if let Some(value) = sig_encoding {
         prioritized.insert(0, value);
     }
@@ -138,15 +181,15 @@ pub(crate) fn from_bytes(
     if !prioritized.contains(&"utf_8") {
         prioritized.push("utf_8");
     }
-    prioritized.extend_from_slice(IANA_SUPPORTED_MB_FIRST);
+    prioritized.extend_from_slice(encoding::supported_encodings());
 
-    let mut results = CharsetMatches::from_results(py, Vec::new())?;
-    let mut early_results = CharsetMatches::from_results(py, Vec::new())?;
+    let mut results = PendingMatches::new();
+    let mut early_results = PendingMatches::new();
     let mut tested = HashSet::<&str>::new();
     let mut soft_skip = HashSet::<&str>::new();
-    let mut fallback_ascii: Option<Py<CharsetMatch>> = None;
-    let mut fallback_utf8: Option<Py<CharsetMatch>> = None;
-    let mut fallback_specified: Option<Py<CharsetMatch>> = None;
+    let mut fallback_ascii: Option<CharsetMatch> = None;
+    let mut fallback_utf8: Option<CharsetMatch> = None;
+    let mut fallback_specified: Option<CharsetMatch> = None;
     let mut definitive = false;
     let mut definitive_languages = HashSet::<&str>::new();
     let mut post_definitive_success = 0usize;
@@ -155,7 +198,7 @@ pub(crate) fn from_bytes(
     // inclusion -> chunk -> coherence results
     let mut coherence_cache =
         FxHashMap::<String, FxHashMap<String, Vec<(&'static str, f64)>>>::default();
-    let explain_mess = explain && (1..=2).contains(&isolation.len());
+    let explain_mess = options.explain && (1..=2).contains(&isolation.len());
 
     for encoding in prioritized {
         if (!isolation.is_empty() && !isolation.iter().any(|value| value == encoding))
@@ -176,12 +219,8 @@ pub(crate) fn from_bytes(
         if !codecs::is_known(encoding) {
             continue; // no codec available
         }
-        let multibyte = tables::is_multi_byte_encoding(encoding);
-        let target_languages: Vec<&str> = if multibyte {
-            mb_languages(encoding)
-        } else {
-            single_byte_languages(encoding)
-        };
+        let multibyte = encoding::is_multi_byte_encoding(encoding);
+        let target_languages = encoding::target_languages(encoding);
         if definitive
             && !target_languages
                 .iter()
@@ -259,7 +298,7 @@ pub(crate) fn from_bytes(
             let ratio = match mess_cache.get(&chunk) {
                 Some(value) => *value,
                 None => {
-                    let value = mess_ratio_impl(py, &chunk, threshold, explain_mess)?;
+                    let value = mess::mess_ratio_with(&chunk, threshold, explain_mess, logger);
                     mess_cache.insert(chunk.clone(), value);
                     value
                 }
@@ -280,7 +319,7 @@ pub(crate) fn from_bytes(
         let mean = if ratios.is_empty() {
             0.0
         } else {
-            py_sum(&ratios) / ratios.len() as f64
+            pyfloat::sum(&ratios) / ratios.len() as f64
         };
         if is_too_large
             && !multibyte
@@ -291,8 +330,8 @@ pub(crate) fn from_bytes(
             continue;
         }
         if mean >= threshold || early_stop >= max_give_up {
-            soft_skip.extend(tables::similar_encodings(encoding).iter().copied());
-            if enable_fallback
+            soft_skip.extend(encoding::similar_encodings(encoding).iter().copied());
+            if options.enable_fallback
                 && (encoding == "ascii"
                     || encoding == "utf_8"
                     || specified == Some(encoding)
@@ -305,16 +344,7 @@ pub(crate) fn from_bytes(
                         Err(_) => continue,
                     }
                 }
-                let fallback = new_match(
-                    py,
-                    sequences,
-                    encoding,
-                    threshold,
-                    bom,
-                    Vec::new(),
-                    decoded,
-                    specified,
-                )?;
+                let fallback = new_match(encoding, threshold, bom, Vec::new(), decoded, specified);
                 if specified == Some(encoding) {
                     fallback_specified = Some(fallback);
                 } else if encoding == "ascii" {
@@ -340,11 +370,13 @@ pub(crate) fn from_bytes(
                 let values = match cache.get(chunk.as_str()) {
                     Some(value) => value.clone(),
                     None => {
-                        let value = coherence(
+                        // Inclusion lists only name profiled languages.
+                        let value = coherence::coherence_ratio(
                             chunk,
-                            language_threshold,
+                            options.language_threshold,
                             (!inclusion.is_empty()).then_some(inclusion.as_str()),
-                        )?;
+                        )
+                        .unwrap_or_default();
                         cache.insert(chunk.clone(), value.clone());
                         value
                     }
@@ -352,7 +384,7 @@ pub(crate) fn from_bytes(
                 coherence_results.push(values);
             }
         }
-        let merged = merge_coherence(coherence_results);
+        let merged = coherence::merge_coherence_ratios(coherence_results);
         let best_coherence = merged.iter().map(|item| item.1).fold(0.0, f64::max);
         let retained_decoded = if !is_too_large
             || specified == Some(encoding)
@@ -363,8 +395,6 @@ pub(crate) fn from_bytes(
             None
         };
         let current = new_match(
-            py,
-            sequences,
             encoding,
             mean,
             bom,
@@ -374,27 +404,26 @@ pub(crate) fn from_bytes(
                 .collect(),
             retained_decoded,
             specified,
-        )?;
-        results.push(py, current.clone_ref(py))?;
+        );
+        results.push(current.clone());
         if definitive && !multibyte && mean < 0.02 {
             post_definitive_success += 1;
         }
         if (specified == Some(encoding) || matches!(encoding, "ascii" | "utf_8")) && mean < 0.1 {
             if mean == 0.0 {
-                log(py, DEBUG, || {
+                emit(logger, Level::Debug, || {
                     format!("Encoding detection: {encoding} is most likely the one.")
-                })?;
-                return new_matches(py, vec![current]);
+                });
+                return CharsetMatches::from_sorted(vec![current]);
             }
-            early_results.push(py, current.clone_ref(py))?;
+            early_results.push(current.clone());
         }
         if early_results.len() > 0
             && specified.is_none_or(|value| tested.contains(value))
             && tested.contains("ascii")
             && tested.contains("utf_8")
         {
-            let best = early_results.best_native(py)?;
-            return new_matches(py, best.into_iter().collect());
+            return CharsetMatches::from_sorted(early_results.take_best().into_iter().collect());
         }
         if !definitive
             && !multibyte
@@ -429,29 +458,29 @@ pub(crate) fn from_bytes(
             multibyte_definitive = true;
         }
         if sig_encoding == Some(encoding) {
-            return new_matches(py, vec![current]);
+            return CharsetMatches::from_sorted(vec![current]);
         }
     }
 
     if results.len() == 0 {
         if let Some(value) = fallback_specified.or(fallback_utf8).or(fallback_ascii) {
-            results.push(py, value)?;
+            results.push(value);
         }
     }
     if results.len() > 0 {
         let alternatives = results.len() - 1;
-        if let Some(best) = results.best_native(py)? {
-            let encoding = best.bind(py).borrow().encoding_name().to_owned();
-            log(py, DEBUG, || {
+        if let Some(best) = results.best() {
+            let encoding = best.encoding().to_owned();
+            emit(logger, Level::Debug, || {
                 format!(
                     "Encoding detection: Found {encoding} as plausible (best-candidate) for content. With {alternatives} alternatives."
                 )
-            })?;
+            });
         }
     } else {
-        log(py, DEBUG, || {
+        emit(logger, Level::Debug, || {
             "Encoding detection: Unable to determine any suitable charset.".to_owned()
-        })?;
+        });
     }
-    Py::new(py, results)
+    results.into_matches()
 }

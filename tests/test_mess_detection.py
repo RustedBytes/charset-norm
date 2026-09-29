@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from charset_normalizer.md import (
+from charset_norm.md import (
     _char_info,
     is_suspiciously_successive_range,
     mess_ratio,

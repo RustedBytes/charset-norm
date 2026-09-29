@@ -173,7 +173,7 @@ def downstream_niquests(session: nox.Session) -> None:
     session.run(
         "python",
         "-c",
-        "import charset_normalizer; print(charset_normalizer.__version__)",
+        "import charset_norm; print(charset_norm.__version__)",
     )
     session.run(
         "python",
@@ -206,7 +206,7 @@ def downstream_requests(session: nox.Session) -> None:
     session.run(
         "python",
         "-c",
-        "import charset_normalizer; print(charset_normalizer.__version__)",
+        "import charset_norm; print(charset_norm.__version__)",
     )
     session.run(
         "python",

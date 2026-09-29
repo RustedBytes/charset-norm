@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- Renamed the distribution to ``charset-norm`` (a Rust rewrite of
-  charset_normalizer); the importable module is still ``charset_normalizer``.
+- Split the Rust code into a Cargo workspace: the ``charset-norm`` library crate
+  (pure Rust, publishable to crates.io, with a ``Logger`` trait and an optional
+  ``log`` feature) and the ``charset-norm-python`` PyO3 bindings.
+- Renamed the distribution to ``charset-norm`` and the importable package to
+  ``charset_norm`` (a Rust rewrite of charset_normalizer); its logger is now
+  ``logging.getLogger("charset_norm")``.
 - Replaced the Cython build with a required Rust/PyO3 ``abi3`` extension while
   preserving the Python import and call surface.
 - Raised the minimum supported Python version to 3.8 and limited binary

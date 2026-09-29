@@ -4,7 +4,7 @@ from os import pardir, path
 
 import pytest
 
-from charset_normalizer.api import from_path
+from charset_norm.api import from_path
 
 DIR_PATH = path.join(path.dirname(path.realpath(__file__)), pardir)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from charset_normalizer.legacy import detect
+from charset_norm.legacy import detect
 
 
 class TestDetectLegacy(unittest.TestCase):

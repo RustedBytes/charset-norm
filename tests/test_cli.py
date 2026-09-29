@@ -6,7 +6,7 @@ from os import pardir, path, remove
 from os.path import exists
 from unittest.mock import patch
 
-from charset_normalizer.cli import cli_detect, query_yes_no
+from charset_norm.cli import cli_detect, query_yes_no
 
 DIR_PATH = path.join(path.dirname(path.realpath(__file__)), pardir)
 

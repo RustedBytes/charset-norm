@@ -1,13 +1,13 @@
 """
-Charset-Normalizer
-~~~~~~~~~~~~~~
-The Real First Universal Charset Detector.
+charset-norm
+~~~~~~~~~~~~
+A Rust rewrite of charset_normalizer, the Real First Universal Charset Detector.
 A library that helps you read text from an unknown charset encoding.
 Motivated by chardet, This package is trying to resolve the issue by taking a new approach.
 All IANA character set names for which the Python core library provides codecs are supported.
 
 Basic usage:
-   >>> from charset_normalizer import from_bytes
+   >>> from charset_norm import from_bytes
    >>> results = from_bytes('Bсеки човек има право на образование. Oбразованието!'.encode('utf_8'))
    >>> best_guess = results.best()
    >>> str(best_guess)
@@ -45,4 +45,4 @@ __all__ = (
 # Attach a NullHandler to the top level logger by default
 # https://docs.python.org/3.3/howto/logging.html#configuring-logging-for-a-library
 
-logging.getLogger("charset_normalizer").addHandler(logging.NullHandler())
+logging.getLogger("charset_norm").addHandler(logging.NullHandler())
