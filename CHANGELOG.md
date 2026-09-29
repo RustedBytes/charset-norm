@@ -1,0 +1,553 @@
+# Changelog
+All notable changes to charset-normalizer will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+## Unreleased
+
+### Changed
+
+- Replaced the Cython build with a required Rust/PyO3 ``abi3`` extension while
+  preserving the Python import and call surface.
+- Raised the minimum supported Python version to 3.8 and limited binary
+  distributions to mainstream CPython desktop/server platforms.
+
+## [3.5.1](https://github.com/Ousret/charset_normalizer/compare/3.5.0...3.5.1) (2026-08-15)
+
+### Changed
+- Raised upper bound of setuptools to v84 (#794)
+- Cache performance access optimization for our CharInfo struct (prebuilt only).
+
+### Fixed
+- No longer decoding large content when the noise detector output give a high entropy.
+  Only impacted large content input >1M bytes.
+
+## [3.5.0](https://github.com/Ousret/charset_normalizer/compare/3.4.9...3.5.0) (2026-08-12)
+
+### Added
+- Explicit support for Python 3.15
+
+### Fixed
+- Comparing a CharsetMatch to a non-alias encoding strings (#773)
+- Return 0.0 CharsetMatch.multi_byte_usage for empty payloads instead of crashing (#774)
+- A file with both a charset declaration and BOM/SIG did not verify first the BOM/SIG charset.
+- iso2022* cases misdetected due to a flaw in our multibyte chunking logic.
+
+### Changed
+- Replaced the optional mypyc build with Cython extensions while retaining the
+  pure Python fallback. The previous engine (mypyc) started to hit rough limit around
+  the optimization of our noise/coherence detector while Cython allows us to
+  steer the engine toward the right generated optimized sources.
+  This change SHOULD not impact bundler (e.g. Pyinstaller) as the module are
+  immediately discoverable (i.e. not hidden import like mypyc did).
+  Moreover, a long wished distribution is the abi3 wheels, this will allow us
+  to no longer rush each year when a new Python interpreter is released.
+  We still distribute the interpreter specific wheels for faster performance.
+- Applied micro-optimization on several utils.
+- CharsetMatches no longer sort on each match insertion.
+
+### Misc
+- Removed an old performance optimization attempt in apy.py (success_fast_tracked+payload_result_cache).
+
+## [3.4.9](https://github.com/Ousret/charset_normalizer/compare/3.4.8...3.4.9) (2026-07-07)
+
+### Fixed
+- Regression in our fallback path leading to a decode error. (#771)
+  We've yanked 3.4.8 as a result of that bug.
+
+## [3.4.8](https://github.com/Ousret/charset_normalizer/compare/3.4.7...3.4.8) (2026-07-06)
+
+### Fixed
+- Wall import time due to cascade codec imports for our multibyte first sort of iana supported codecs (#742)
+- Unnecessary json import at runtime (#753)
+- Inverse capitalization not seen by noise detector (#731)
+
+### Changed
+- No longer holding a global cache for our noise / coherence measurements. Relax RSS memory usage.
+- Micro-optimizations in our noise / coherence measurements.
+- No longer using regex search by default for our preemptive charset mark algorithm.
+- Raised upperbound of setuptools to v83.
+- Raised upperbound of mypy(c) to v2.1.
+
+### Removed
+- Redundant UTF7 BOM marker (#730)
+
+## [3.4.7](https://github.com/Ousret/charset_normalizer/compare/3.4.6...3.4.7) (2026-04-02)
+
+### Changed
+- Pre-built optimized version using mypy[c] v1.20.
+- Relax `setuptools` constraint to `setuptools>=68,<82.1`.
+
+### Fixed
+- Correctly remove SIG remnant in utf-7 decoded string. (#718) (#716)
+
+## [3.4.6](https://github.com/Ousret/charset_normalizer/compare/3.4.5...3.4.6) (2026-03-15)
+
+### Changed
+- Flattened the logic in `charset_normalizer.md` for higher performance. Removed `eligible(..)` and `feed(...)`
+  in favor of `feed_info(...)`.
+- Raised upper bound for mypy[c] to 1.20, for our optimized version.
+- Updated `UNICODE_RANGES_COMBINED` using Unicode blocks v17.
+
+### Fixed
+- Edge case where noise difference between two candidates can be almost insignificant. (#672)
+- CLI `--normalize` writing to wrong path when passing multiple files in. (#702)
+
+### Misc
+- Freethreaded pre-built wheels now shipped in PyPI starting with 3.14t. (#616)
+
+## [3.4.5](https://github.com/Ousret/charset_normalizer/compare/3.4.4...3.4.5) (2026-03-06)
+
+### Changed
+- Update `setuptools` constraint to `setuptools>=68,<=82`.
+- Raised upper bound of mypyc for the optional pre-built extension to v1.19.1
+
+### Fixed
+- Add explicit link to lib math in our optimized build. (#692)
+- Logger level not restored correctly for empty byte sequences. (#701)
+- TypeError when passing bytearray to from_bytes. (#703)
+
+### Misc
+- Applied safe micro-optimizations in both our noise detector and language detector.
+- Rewrote the `query_yes_no` function (inside CLI) to avoid using ambiguous licensed code.
+- Added `cd.py` submodule into mypyc optional compilation to reduce further the performance impact.
+
+## [3.4.4](https://github.com/Ousret/charset_normalizer/compare/3.4.2...3.4.4) (2025-10-13)
+
+### Changed
+- Bound `setuptools` to a specific constraint `setuptools>=68,<=81`.
+- Raised upper bound of mypyc for the optional pre-built extension to v1.18.2
+
+### Removed
+- `setuptools-scm` as a build dependency.
+
+### Misc
+- Enforced hashes in `dev-requirements.txt` and created `ci-requirements.txt` for security purposes.
+- Additional pre-built wheels for riscv64, s390x, and armv7l architectures.
+- Restore ` multiple.intoto.jsonl` in GitHub releases in addition to individual attestation file per wheel.
+
+## [3.4.3](https://github.com/Ousret/charset_normalizer/compare/3.4.2...3.4.3) (2025-08-09)
+
+### Changed
+- mypy(c) is no longer a required dependency at build time if `CHARSET_NORMALIZER_USE_MYPYC` isn't set to `1`. (#595) (#583)
+- automatically lower confidence on small bytes samples that are not Unicode in `detect` output legacy function. (#391)
+
+### Added
+- Custom build backend to overcome inability to mark mypy as an optional dependency in the build phase.
+- Support for Python 3.14
+
+### Fixed
+- sdist archive contained useless directories.
+- automatically fallback on valid UTF-16 or UTF-32 even if the md says it's noisy. (#633)
+
+### Misc
+- SBOM are automatically published to the relevant GitHub release to comply with regulatory changes.
+  Each published wheel comes with its SBOM. We choose CycloneDX as the format.
+- Prebuilt optimized wheel are no longer distributed by default for CPython 3.7 due to a change in cibuildwheel.
+
+## [3.4.2](https://github.com/Ousret/charset_normalizer/compare/3.4.1...3.4.2) (2025-05-02)
+
+### Fixed
+- Addressed the DeprecationWarning in our CLI regarding `argparse.FileType` by backporting the target class into the package. (#591)
+- Improved the overall reliability of the detector with CJK Ideographs. (#605) (#587)
+
+### Changed
+- Optional mypyc compilation upgraded to version 1.15 for Python >= 3.8
+
+## [3.4.1](https://github.com/Ousret/charset_normalizer/compare/3.4.0...3.4.1) (2024-12-24)
+
+### Changed
+- Project metadata are now stored using `pyproject.toml` instead of `setup.cfg` using setuptools as the build backend.
+- Enforce annotation delayed loading for a simpler and consistent types in the project.
+- Optional mypyc compilation upgraded to version 1.14 for Python >= 3.8
+
+### Added
+- pre-commit configuration.
+- noxfile.
+
+### Removed
+- `build-requirements.txt` as per using `pyproject.toml` native build configuration.
+- `bin/integration.py` and `bin/serve.py` in favor of downstream integration test (see noxfile).
+- `setup.cfg` in favor of `pyproject.toml` metadata configuration.
+- Unused `utils.range_scan` function.
+
+### Fixed
+- Converting content to Unicode bytes may insert `utf_8` instead of preferred `utf-8`. (#572)
+- Deprecation warning "'count' is passed as positional argument" when converting to Unicode bytes on Python 3.13+
+
+## [3.4.0](https://github.com/Ousret/charset_normalizer/compare/3.3.2...3.4.0) (2024-10-08)
+
+### Added
+- Argument `--no-preemptive` in the CLI to prevent the detector to search for hints.
+- Support for Python 3.13 (#512)
+
+### Fixed
+- Relax the TypeError exception thrown when trying to compare a CharsetMatch with anything else than a CharsetMatch.
+- Improved the general reliability of the detector based on user feedbacks. (#520) (#509) (#498) (#407) (#537)
+- Declared charset in content (preemptive detection) not changed when converting to utf-8 bytes. (#381)
+
+## [3.3.2](https://github.com/Ousret/charset_normalizer/compare/3.3.1...3.3.2) (2023-10-31)
+
+### Fixed
+- Unintentional memory usage regression when using large payload that match several encoding (#376)
+- Regression on some detection case showcased in the documentation (#371)
+
+### Added
+- Noise (md) probe that identify malformed arabic representation due to the presence of letters in isolated form (credit to my wife)
+
+## [3.3.1](https://github.com/Ousret/charset_normalizer/compare/3.3.0...3.3.1) (2023-10-22)
+
+### Changed
+- Optional mypyc compilation upgraded to version 1.6.1 for Python >= 3.8
+- Improved the general detection reliability based on reports from the community
+
+## [3.3.0](https://github.com/Ousret/charset_normalizer/compare/3.2.0...3.3.0) (2023-09-30)
+
+### Added
+- Allow to execute the CLI (e.g. normalizer) through `python -m charset_normalizer.cli` or `python -m charset_normalizer`
+- Support for 9 forgotten encoding that are supported by Python but unlisted in `encoding.aliases` as they have no alias (#323)
+
+### Removed
+- (internal) Redundant utils.is_ascii function and unused function is_private_use_only
+- (internal) charset_normalizer.assets is moved inside charset_normalizer.constant
+
+### Changed
+- (internal) Unicode code blocks in constants are updated using the latest v15.0.0 definition to improve detection
+- Optional mypyc compilation upgraded to version 1.5.1 for Python >= 3.8
+
+### Fixed
+- Unable to properly sort CharsetMatch when both chaos/noise and coherence were close due to an unreachable condition in \_\_lt\_\_ (#350)
+
+## [3.2.0](https://github.com/Ousret/charset_normalizer/compare/3.1.0...3.2.0) (2023-06-07)
+
+### Changed
+- Typehint for function `from_path` no longer enforce `PathLike` as its first argument
+- Minor improvement over the global detection reliability
+
+### Added
+- Introduce function `is_binary` that relies on main capabilities, and optimized to detect binaries
+- Propagate `enable_fallback` argument throughout `from_bytes`, `from_path`, and `from_fp` that allow a deeper control over the detection (default True)
+- Explicit support for Python 3.12
+
+### Fixed
+- Edge case detection failure where a file would contain 'very-long' camel cased word (Issue #289)
+
+## [3.1.0](https://github.com/Ousret/charset_normalizer/compare/3.0.1...3.1.0) (2023-03-06)
+
+### Added
+- Argument `should_rename_legacy` for legacy function `detect` and disregard any new arguments without errors (PR #262)
+
+### Removed
+- Support for Python 3.6 (PR #260)
+
+### Changed
+- Optional speedup provided by mypy/c 1.0.1
+
+## [3.0.1](https://github.com/Ousret/charset_normalizer/compare/3.0.0...3.0.1) (2022-11-18)
+
+### Fixed
+- Multi-bytes cutter/chunk generator did not always cut correctly (PR #233)
+
+### Changed
+- Speedup provided by mypy/c 0.990 on Python >= 3.7
+
+## [3.0.0](https://github.com/Ousret/charset_normalizer/compare/2.1.1...3.0.0) (2022-10-20)
+
+### Added
+- Extend the capability of explain=True when cp_isolation contains at most two entries (min one), will log in details of the Mess-detector results
+- Support for alternative language frequency set in charset_normalizer.assets.FREQUENCIES
+- Add parameter `language_threshold` in `from_bytes`, `from_path` and `from_fp` to adjust the minimum expected coherence ratio
+- `normalizer --version` now specify if current version provide extra speedup (meaning mypyc compilation whl)
+
+### Changed
+- Build with static metadata using 'build' frontend
+- Make the language detection stricter
+- Optional: Module `md.py` can be compiled using Mypyc to provide an extra speedup up to 4x faster than v2.1
+
+### Fixed
+- CLI with opt --normalize fail when using full path for files
+- TooManyAccentuatedPlugin induce false positive on the mess detection when too few alpha character have been fed to it
+- Sphinx warnings when generating the documentation
+
+### Removed
+- Coherence detector no longer return 'Simple English' instead return 'English'
+- Coherence detector no longer return 'Classical Chinese' instead return 'Chinese'
+- Breaking: Method `first()` and `best()` from CharsetMatch
+- UTF-7 will no longer appear as "detected" without a recognized SIG/mark (is unreliable/conflict with ASCII)
+- Breaking: Class aliases CharsetDetector, CharsetDoctor, CharsetNormalizerMatch and CharsetNormalizerMatches
+- Breaking: Top-level function `normalize`
+- Breaking: Properties `chaos_secondary_pass`, `coherence_non_latin` and `w_counter` from CharsetMatch
+- Support for the backport `unicodedata2`
+
+## [3.0.0rc1](https://github.com/Ousret/charset_normalizer/compare/3.0.0b2...3.0.0rc1) (2022-10-18)
+
+### Added
+- Extend the capability of explain=True when cp_isolation contains at most two entries (min one), will log in details of the Mess-detector results
+- Support for alternative language frequency set in charset_normalizer.assets.FREQUENCIES
+- Add parameter `language_threshold` in `from_bytes`, `from_path` and `from_fp` to adjust the minimum expected coherence ratio
+
+### Changed
+- Build with static metadata using 'build' frontend
+- Make the language detection stricter
+
+### Fixed
+- CLI with opt --normalize fail when using full path for files
+- TooManyAccentuatedPlugin induce false positive on the mess detection when too few alpha character have been fed to it
+
+### Removed
+- Coherence detector no longer return 'Simple English' instead return 'English'
+- Coherence detector no longer return 'Classical Chinese' instead return 'Chinese'
+
+## [3.0.0b2](https://github.com/Ousret/charset_normalizer/compare/3.0.0b1...3.0.0b2) (2022-08-21)
+
+### Added
+- `normalizer --version` now specify if current version provide extra speedup (meaning mypyc compilation whl)
+
+### Removed
+- Breaking: Method `first()` and `best()` from CharsetMatch
+- UTF-7 will no longer appear as "detected" without a recognized SIG/mark (is unreliable/conflict with ASCII)
+
+### Fixed
+- Sphinx warnings when generating the documentation
+
+## [3.0.0b1](https://github.com/Ousret/charset_normalizer/compare/2.1.0...3.0.0b1) (2022-08-15)
+
+### Changed
+- Optional: Module `md.py` can be compiled using Mypyc to provide an extra speedup up to 4x faster than v2.1
+
+### Removed
+- Breaking: Class aliases CharsetDetector, CharsetDoctor, CharsetNormalizerMatch and CharsetNormalizerMatches
+- Breaking: Top-level function `normalize`
+- Breaking: Properties `chaos_secondary_pass`, `coherence_non_latin` and `w_counter` from CharsetMatch
+- Support for the backport `unicodedata2`
+
+## [2.1.1](https://github.com/Ousret/charset_normalizer/compare/2.1.0...2.1.1) (2022-08-19)
+
+### Deprecated
+- Function `normalize` scheduled for removal in 3.0
+
+### Changed
+- Removed useless call to decode in fn is_unprintable (#206)
+
+### Fixed
+- Third-party library (i18n xgettext) crashing not recognizing utf_8 (PEP 263) with underscore from [@aleksandernovikov](https://github.com/aleksandernovikov) (#204)
+
+## [2.1.0](https://github.com/Ousret/charset_normalizer/compare/2.0.12...2.1.0) (2022-06-19)
+
+### Added
+- Output the Unicode table version when running the CLI with `--version` (PR #194)
+
+### Changed
+- Reuse decoded buffer for single byte character sets from [@nijel](https://github.com/nijel) (PR #175)
+- Fixing some performance bottlenecks from [@deedy5](https://github.com/deedy5) (PR #183)
+
+### Fixed
+- Workaround potential bug in cpython with Zero Width No-Break Space located in Arabic Presentation Forms-B, Unicode 1.1 not acknowledged as space (PR #175)
+- CLI default threshold aligned with the API threshold from [@oleksandr-kuzmenko](https://github.com/oleksandr-kuzmenko) (PR #181)
+
+### Removed
+- Support for Python 3.5 (PR #192)
+
+### Deprecated
+- Use of backport unicodedata from `unicodedata2` as Python is quickly catching up, scheduled for removal in 3.0 (PR #194)
+
+## [2.0.12](https://github.com/Ousret/charset_normalizer/compare/2.0.11...2.0.12) (2022-02-12)
+
+### Fixed
+- ASCII miss-detection on rare cases (PR #170)
+
+## [2.0.11](https://github.com/Ousret/charset_normalizer/compare/2.0.10...2.0.11) (2022-01-30)
+
+### Added
+- Explicit support for Python 3.11 (PR #164)
+
+### Changed
+- The logging behavior have been completely reviewed, now using only TRACE and DEBUG levels (PR #163 #165)
+
+## [2.0.10](https://github.com/Ousret/charset_normalizer/compare/2.0.9...2.0.10) (2022-01-04)
+
+### Fixed
+- Fallback match entries might lead to UnicodeDecodeError for large bytes sequence (PR #154)
+
+### Changed
+- Skipping the language-detection (CD) on ASCII (PR #155)
+
+## [2.0.9](https://github.com/Ousret/charset_normalizer/compare/2.0.8...2.0.9) (2021-12-03)
+
+### Changed
+- Moderating the logging impact (since 2.0.8) for specific environments (PR #147)
+
+### Fixed
+- Wrong logging level applied when setting kwarg `explain` to True (PR #146)
+
+## [2.0.8](https://github.com/Ousret/charset_normalizer/compare/2.0.7...2.0.8) (2021-11-24)
+### Changed
+- Improvement over Vietnamese detection (PR #126)
+- MD improvement on trailing data and long foreign (non-pure latin) data (PR #124)
+- Efficiency improvements in cd/alphabet_languages from [@adbar](https://github.com/adbar) (PR #122)
+- call sum() without an intermediary list following PEP 289 recommendations from [@adbar](https://github.com/adbar) (PR #129)
+- Code style as refactored by Sourcery-AI (PR #131)
+- Minor adjustment on the MD around european words (PR #133)
+- Remove and replace SRTs from assets / tests (PR #139)
+- Initialize the library logger with a `NullHandler` by default from [@nmaynes](https://github.com/nmaynes) (PR #135)
+- Setting kwarg `explain` to True will add provisionally (bounded to function lifespan) a specific stream handler (PR #135)
+
+### Fixed
+- Fix large (misleading) sequence giving UnicodeDecodeError (PR #137)
+- Avoid using too insignificant chunk (PR #137)
+
+### Added
+- Add and expose function `set_logging_handler` to configure a specific StreamHandler from [@nmaynes](https://github.com/nmaynes) (PR #135)
+- Add `CHANGELOG.md` entries, format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) (PR #141)
+
+## [2.0.7](https://github.com/Ousret/charset_normalizer/compare/2.0.6...2.0.7) (2021-10-11)
+### Added
+- Add support for Kazakh (Cyrillic) language detection (PR #109)
+
+### Changed
+- Further, improve inferring the language from a given single-byte code page (PR #112)
+- Vainly trying to leverage PEP263 when PEP3120 is not supported (PR #116)
+- Refactoring for potential performance improvements in loops from [@adbar](https://github.com/adbar) (PR #113)
+- Various detection improvement (MD+CD) (PR #117)
+
+### Removed
+- Remove redundant logging entry about detected language(s) (PR #115)
+
+### Fixed
+- Fix a minor inconsistency between Python 3.5 and other versions regarding language detection (PR #117 #102)
+
+## [2.0.6](https://github.com/Ousret/charset_normalizer/compare/2.0.5...2.0.6) (2021-09-18)
+### Fixed
+- Unforeseen regression with the loss of the backward-compatibility with some older minor of Python 3.5.x (PR #100)
+- Fix CLI crash when using --minimal output in certain cases (PR #103)
+
+### Changed
+- Minor improvement to the detection efficiency (less than 1%) (PR #106 #101)
+
+## [2.0.5](https://github.com/Ousret/charset_normalizer/compare/2.0.4...2.0.5) (2021-09-14)
+### Changed
+- The project now comply with: flake8, mypy, isort and black to ensure a better overall quality (PR #81)
+- The BC-support with v1.x was improved, the old staticmethods are restored (PR #82)
+- The Unicode detection is slightly improved (PR #93)
+- Add syntax sugar \_\_bool\_\_ for results CharsetMatches list-container (PR #91)
+
+### Removed
+- The project no longer raise warning on tiny content given for detection, will be simply logged as warning instead (PR #92)
+
+### Fixed
+- In some rare case, the chunks extractor could cut in the middle of a multi-byte character and could mislead the mess detection (PR #95)
+- Some rare 'space' characters could trip up the UnprintablePlugin/Mess detection (PR #96)
+- The MANIFEST.in was not exhaustive (PR #78)
+
+## [2.0.4](https://github.com/Ousret/charset_normalizer/compare/2.0.3...2.0.4) (2021-07-30)
+### Fixed
+- The CLI no longer raise an unexpected exception when no encoding has been found (PR #70)
+- Fix accessing the 'alphabets' property when the payload contains surrogate characters (PR #68)
+- The logger could mislead (explain=True) on detected languages and the impact of one MBCS match (PR #72)
+- Submatch factoring could be wrong in rare edge cases (PR #72)
+- Multiple files given to the CLI were ignored when publishing results to STDOUT. (After the first path) (PR #72)
+- Fix line endings from CRLF to LF for certain project files (PR #67)
+
+### Changed
+- Adjust the MD to lower the sensitivity, thus improving the global detection reliability (PR #69 #76)
+- Allow fallback on specified encoding if any (PR #71)
+
+## [2.0.3](https://github.com/Ousret/charset_normalizer/compare/2.0.2...2.0.3) (2021-07-16)
+### Changed
+- Part of the detection mechanism has been improved to be less sensitive, resulting in more accurate detection results. Especially ASCII. (PR #63)
+- According to the community wishes, the detection will fall back on ASCII or UTF-8 in a last-resort case. (PR #64)
+
+## [2.0.2](https://github.com/Ousret/charset_normalizer/compare/2.0.1...2.0.2) (2021-07-15)
+### Fixed
+- Empty/Too small JSON payload miss-detection fixed. Report from [@tseaver](https://github.com/tseaver) (PR #59)
+
+### Changed
+- Don't inject unicodedata2 into sys.modules from [@akx](https://github.com/akx) (PR #57)
+
+## [2.0.1](https://github.com/Ousret/charset_normalizer/compare/2.0.0...2.0.1) (2021-07-13)
+### Fixed
+- Make it work where there isn't a filesystem available, dropping assets frequencies.json. Report from [@sethmlarson](https://github.com/sethmlarson). (PR #55)
+- Using explain=False permanently disable the verbose output in the current runtime (PR #47)
+- One log entry (language target preemptive) was not show in logs when using explain=True (PR #47)
+- Fix undesired exception (ValueError) on getitem of instance CharsetMatches (PR #52)
+
+### Changed
+- Public function normalize default args values were not aligned with from_bytes (PR #53)
+
+### Added
+- You may now use charset aliases in cp_isolation and cp_exclusion arguments (PR #47)
+
+## [2.0.0](https://github.com/Ousret/charset_normalizer/compare/1.4.1...2.0.0) (2021-07-02)
+### Changed
+- 4x to 5 times faster than the previous 1.4.0 release. At least 2x faster than Chardet.
+- Accent has been made on UTF-8 detection, should perform rather instantaneous.
+- The backward compatibility with Chardet has been greatly improved. The legacy detect function returns an identical charset name whenever possible.
+- The detection mechanism has been slightly improved, now Turkish content is detected correctly (most of the time)
+- The program has been rewritten to ease the readability and maintainability. (+Using static typing)+
+- utf_7 detection has been reinstated.
+
+### Removed
+- This package no longer require anything when used with Python 3.5 (Dropped cached_property)
+- Removed support for these languages: Catalan, Esperanto, Kazakh, Baque, Volapük, Azeri, Galician, Nynorsk, Macedonian, and Serbocroatian.
+- The exception hook on UnicodeDecodeError has been removed.
+
+### Deprecated
+- Methods coherence_non_latin, w_counter, chaos_secondary_pass of the class CharsetMatch are now deprecated and scheduled for removal in v3.0
+
+### Fixed
+- The CLI output used the relative path of the file(s). Should be absolute.
+
+## [1.4.1](https://github.com/Ousret/charset_normalizer/compare/1.4.0...1.4.1) (2021-05-28)
+### Fixed
+- Logger configuration/usage no longer conflict with others (PR #44)
+
+## [1.4.0](https://github.com/Ousret/charset_normalizer/compare/1.3.9...1.4.0) (2021-05-21)
+### Removed
+- Using standard logging instead of using the package loguru.
+- Dropping nose test framework in favor of the maintained pytest.
+- Choose to not use dragonmapper package to help with gibberish Chinese/CJK text.
+- Require cached_property only for Python 3.5 due to constraint. Dropping for every other interpreter version.
+- Stop support for UTF-7 that does not contain a SIG.
+- Dropping PrettyTable, replaced with pure JSON output in CLI.
+
+### Fixed
+- BOM marker in a CharsetNormalizerMatch instance could be False in rare cases even if obviously present. Due to the sub-match factoring process.
+- Not searching properly for the BOM when trying utf32/16 parent codec.
+
+### Changed
+- Improving the package final size by compressing frequencies.json.
+- Huge improvement over the larges payload.
+
+### Added
+- CLI now produces JSON consumable output.
+- Return ASCII if given sequences fit. Given reasonable confidence.
+
+## [1.3.9](https://github.com/Ousret/charset_normalizer/compare/1.3.8...1.3.9) (2021-05-13)
+
+### Fixed
+- In some very rare cases, you may end up getting encode/decode errors due to a bad bytes payload (PR #40)
+
+## [1.3.8](https://github.com/Ousret/charset_normalizer/compare/1.3.7...1.3.8) (2021-05-12)
+
+### Fixed
+- Empty given payload for detection may cause an exception if trying to access the `alphabets` property. (PR #39)
+
+## [1.3.7](https://github.com/Ousret/charset_normalizer/compare/1.3.6...1.3.7) (2021-05-12)
+
+### Fixed
+- The legacy detect function should return UTF-8-SIG if sig is present in the payload. (PR #38)
+
+## [1.3.6](https://github.com/Ousret/charset_normalizer/compare/1.3.5...1.3.6) (2021-02-09)
+
+### Changed
+- Amend the previous release to allow prettytable 2.0 (PR #35)
+
+## [1.3.5](https://github.com/Ousret/charset_normalizer/compare/1.3.4...1.3.5) (2021-02-08)
+
+### Fixed
+- Fix error while using the package with a python pre-release interpreter (PR #33)
+
+### Changed
+- Dependencies refactoring, constraints revised.
+
+### Added
+- Add python 3.9 and 3.10 to the supported interpreters

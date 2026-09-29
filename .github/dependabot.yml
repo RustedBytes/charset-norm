@@ -1,0 +1,20 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "github-actions"  # zizmor: ignore[dependabot-cooldown]
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    ignore:
+      # Ignore all patch releases as we can manually
+      # upgrade if we run into a bug and need a fix.
+      - dependency-name: "*"
+        update-types: [ "version-update:semver-patch" ]

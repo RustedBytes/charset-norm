@@ -1,0 +1,27 @@
+[package]
+name = "charset-normalizer"
+version = "3.5.1"
+edition = "2021"
+rust-version = "1.83"
+license = "MIT"
+description = "Native core for the charset-normalizer Python package"
+homepage = "https://github.com/jawah/charset_normalizer"
+repository = "https://github.com/jawah/charset_normalizer"
+documentation = "https://charset-normalizer.readthedocs.io/"
+publish = false
+
+[lib]
+name = "_native"
+path = "rust/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "=0.29.2", features = ["abi3-py38"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
