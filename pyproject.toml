@@ -47,20 +47,19 @@ ci = [
   "nox>=2026.4.10; python_version >= '3.9'",
   "build==1.2.2.post1; python_version == '3.8'",
   "build==1.4.3; python_version >= '3.9'",
+  "coverage[toml]==7.6.1; python_version == '3.8'",
+  "coverage[toml]==7.10.7; python_version == '3.9'",
+  "coverage[toml]>=7.13.5; python_version >= '3.10'",
 ]
 dev = [
   "pytest==8.3.5; python_version == '3.8'",
   "pytest==8.4.2; python_version == '3.9'",
   "pytest==9.0.3; python_version >= '3.10'",
-  "coverage==7.6.1; python_version == '3.8'",
-  "coverage==7.10.7; python_version == '3.9'",
-  "coverage>=7.13.5; python_version >= '3.10'",
+  "coverage[toml]==7.6.1; python_version == '3.8'",
+  "coverage[toml]==7.10.7; python_version == '3.9'",
+  "coverage[toml]>=7.13.5; python_version >= '3.10'",
   "ruff==0.16.9",
   "pyright==1.1.414",
-]
-docs = [
-  "Sphinx",
-  "furo",
 ]
 
 [tool.maturin]
@@ -71,8 +70,6 @@ features = ["pyo3/abi3-py38"]
 include = [
   "CHANGELOG.md",
   "LICENSE",
-  "SECURITY.md",
-  "docs/**",
   "tests/**",
   "data/**",
 ]
@@ -82,9 +79,37 @@ normalizer = "charset_normalizer.cli:cli_detect"
 
 [project.urls]
 "Changelog" = "https://github.com/RustedBytes/charset-norm/blob/main/CHANGELOG.md"
-"Documentation" = "https://charset-normalizer.readthedocs.io/"
+"Documentation" = "https://github.com/RustedBytes/charset-norm#readme"
 "Code" = "https://github.com/RustedBytes/charset-norm"
 "Issue tracker" = "https://github.com/RustedBytes/charset-norm/issues"
+
+[tool.coverage.run]
+source = ["charset_normalizer"]
+# Needed for Python 3.11 and lower
+disable_warnings = ["no-sysmon"]
+
+[tool.coverage.paths]
+source = [
+  "src/charset_normalizer",
+  "*/charset_normalizer",
+  "*\\charset_normalizer",
+]
+
+[tool.coverage.report]
+omit = ["src/charset_normalizer/__main__.py"]
+exclude_lines = [
+  "except ModuleNotFoundError:",
+  "except ImportError:",
+  "pass",
+  "import",
+  "raise NotImplementedError",
+  ".* # Platform-specific.*",
+  ".*:.* # Python \\d.*",
+  ".* # Abstract",
+  ".* # Defensive:",
+  "if (?:typing.)?TYPE_CHECKING:",
+  "^\\s*?\\.\\.\\.\\s*$",
+]
 
 [tool.pytest.ini_options]
 log_level = "DEBUG"
@@ -94,7 +119,7 @@ filterwarnings = [
 
 [tool.ruff]
 target-version = "py38"
-extend-exclude = ["data", "docs"]
+extend-exclude = ["data"]
 
 [tool.pyright]
 include = ["src", "tests", "bin"]

@@ -1,9 +1,0 @@
-include LICENSE README.md CHANGELOG.md Cargo.toml Cargo.lock src/charset_normalizer/py.typed SECURITY.md noxfile.py
-recursive-include rust *.rs *.bin
-recursive-include data *.md
-recursive-include data *.txt
-recursive-include docs *
-recursive-include tests *
-recursive-exclude .github/ *
-recursive-exclude __pycache__/ *
-global-exclude *.pyc

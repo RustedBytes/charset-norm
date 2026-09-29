@@ -11,6 +11,11 @@ use pyo3::types::{PyAny, PyByteArray, PyBytes};
 use regex::Regex;
 use rustc_hash::FxHashMap;
 
+/// Detection allocates many short-lived strings; mimalloc handles that
+/// pattern noticeably faster than the system allocators.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod api;
 mod codecs;
 mod mess;

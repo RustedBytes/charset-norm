@@ -1,3 +1,0 @@
-[[PackageOverrides]]
-vulnerability.ignore = true
-reason = "Project have no dependencies. Dev vulnerability are not even exploitable."

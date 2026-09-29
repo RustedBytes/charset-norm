@@ -22,6 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   ``docs`` and ``ci`` dependency groups in ``pyproject.toml``;
   ``dev-requirements.txt``, ``docs/requirements.txt`` and ``ci-requirements.txt``
   were removed.
+- Removed the Sphinx documentation, pre-commit, Read the Docs, OSV scanner and
+  community files; coverage settings moved to ``[tool.coverage]`` in
+  ``pyproject.toml`` and ``nox -s lint`` now runs ruff and pyright directly.
+- Release builds use fat LTO and the mimalloc allocator (about 8% fewer
+  instructions per detection than the system allocator with thin LTO).
 - ``CharsetMatch.fingerprint`` is now a stable hash of the decoded text instead of
   the process-salted ``hash(str)``.
 

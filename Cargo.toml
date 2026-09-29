@@ -7,7 +7,6 @@ license = "MIT"
 description = "Native core for the charset-norm Python package"
 homepage = "https://github.com/RustedBytes/charset-norm"
 repository = "https://github.com/RustedBytes/charset-norm"
-documentation = "https://charset-normalizer.readthedocs.io/"
 publish = false
 
 [lib]
@@ -17,15 +16,19 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "=0.29.2", features = ["abi3-py38"] }
+mimalloc = { version = "0.1", default-features = false }
 regex = "1.13"
 rustc-hash = "2.1"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1.25"
 unicode_names2 = "4.0"
 
+# Wheels are built with this profile: whole-program optimisation in a single
+# codegen unit. Unwinding stays enabled so PyO3 can turn panics into exceptions.
 [profile.release]
+opt-level = 3
 codegen-units = 1
-lto = "thin"
+lto = "fat"
 strip = "symbols"
 
 [lints.rust]

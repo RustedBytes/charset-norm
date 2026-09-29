@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 
 import nox
 
@@ -222,21 +221,16 @@ def downstream_requests(session: nox.Session) -> None:
 @nox.session()
 def format(session: nox.Session) -> None:
     """Run code formatters."""
-    lint(session)
+    install_group(session, "dev")
+    session.run("ruff", "format", ".")
+    session.run("ruff", "check", "--fix", ".")
 
 
 @nox.session
 def lint(session: nox.Session) -> None:
-    session.install("pre-commit")
-    session.run("pre-commit", "run", "--all-files")
-
-
-@nox.session
-def docs(session: nox.Session) -> None:
-    install_group(session, "docs")
-    session.install(".")
-
-    session.chdir("docs")
-    if os.path.exists("_build"):
-        shutil.rmtree("_build")
-    session.run("sphinx-build", "-b", "html", "-W", ".", "_build/html")
+    """Check formatting, lint and types."""
+    install_group(session, "dev")
+    session.install(".", silent=False)
+    session.run("ruff", "format", "--check", ".")
+    session.run("ruff", "check", ".")
+    session.run("pyright", "--pythonpath", session.virtualenv.bin + "/python")
