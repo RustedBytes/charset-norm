@@ -4,6 +4,12 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.10"
+  jobs:
+    # Documentation dependencies live in the "docs" dependency group of
+    # pyproject.toml; installing groups requires pip >= 25.1.
+    post_install:
+      - python -m pip install --upgrade "pip>=25.1"
+      - python -m pip install --group docs
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
@@ -12,8 +18,3 @@ sphinx:
 # If using Sphinx, optionally build your docs in additional formats such as PDF
 # formats:
 #    - pdf
-
-# Optionally declare the Python requirements required to build your docs
-python:
-   install:
-   - requirements: docs/requirements.txt

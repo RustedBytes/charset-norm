@@ -4,12 +4,7 @@ from functools import lru_cache
 from logging import getLogger
 
 from . import _native
-
 from .constant import (
-    COMMON_CJK_CHARACTERS,
-    COMMON_SAFE_ASCII_CHARACTERS,
-    TRACE,
-    CompatibleFamillyRange,
     _ACCENTUATED,
     _ARABIC,
     _ARABIC_ISOLATED_FORM,
@@ -17,8 +12,8 @@ from .constant import (
     _CJK,
     _COMPATIBLE_RANGE_FAMILIES,
     _COMPATIBLE_WITH_ANY_RANGE_FAMILIES,
-    _HANGUL,
     _HALFWIDTH_KATAKANA,
+    _HANGUL,
     _HIRAGANA,
     _KATAKANA,
     _LATIN,
@@ -27,6 +22,10 @@ from .constant import (
     _SENTENCE_OPEN_PUNCTUATION,
     _SUPERSCRIPT,
     _THAI,
+    COMMON_CJK_CHARACTERS,
+    COMMON_SAFE_ASCII_CHARACTERS,
+    TRACE,
+    CompatibleFamillyRange,
 )
 from .utils import (
     _character_flags,
@@ -46,34 +45,34 @@ class CharInfo:
     """Pre-computed character properties shared across all detectors."""
 
     __slots__ = (
-        "character",
-        "printable",
-        "alpha",
-        "upper",
-        "lower",
-        "space",
-        "digit",
-        "is_ascii",
-        "case_variable",
-        "flags",
         "accentuated",
-        "latin",
-        "is_cjk",
-        "is_katakana",
-        "is_halfwidth_katakana",
-        "is_arabic",
-        "is_ligature",
-        "is_superscript",
-        "is_sentence_open_punctuation",
-        "is_glyph",
-        "punct",
-        "sym",
-        "range",
-        "sep",
-        "emoticon",
-        "safe",
+        "alpha",
+        "case_variable",
+        "character",
         "common_cjk",
+        "digit",
+        "emoticon",
+        "flags",
+        "is_arabic",
+        "is_ascii",
+        "is_cjk",
+        "is_glyph",
+        "is_halfwidth_katakana",
+        "is_katakana",
+        "is_ligature",
+        "is_sentence_open_punctuation",
+        "is_superscript",
+        "latin",
+        "lower",
+        "printable",
+        "punct",
+        "range",
+        "safe",
+        "sep",
+        "space",
+        "sym",
         "unaccented",
+        "upper",
     )
 
     character: str
@@ -290,10 +289,10 @@ class MessDetectorPlugin:
 
 class TooManySymbolOrPunctuationPlugin(MessDetectorPlugin):
     __slots__ = (
-        "_punctuation_count",
-        "_symbol_count",
         "_character_count",
         "_last_printable_char",
+        "_punctuation_count",
+        "_symbol_count",
     )
 
     def __init__(self) -> None:
@@ -333,7 +332,7 @@ class TooManySymbolOrPunctuationPlugin(MessDetectorPlugin):
 
 
 class TooManyAccentuatedPlugin(MessDetectorPlugin):
-    __slots__ = ("_character_count", "_accentuated_count")
+    __slots__ = ("_accentuated_count", "_character_count")
 
     def __init__(self) -> None:
         self._character_count: int = 0
@@ -360,7 +359,7 @@ class TooManyAccentuatedPlugin(MessDetectorPlugin):
 
 
 class UnprintablePlugin(MessDetectorPlugin):
-    __slots__ = ("_unprintable_count", "_character_count", "_has_escape")
+    __slots__ = ("_character_count", "_has_escape", "_unprintable_count")
 
     def __init__(self) -> None:
         self._unprintable_count: int = 0
@@ -398,10 +397,10 @@ class UnprintablePlugin(MessDetectorPlugin):
 
 class SuspiciousDuplicateAccentPlugin(MessDetectorPlugin):
     __slots__ = (
-        "_successive_count",
         "_character_count",
         "_last_latin_character",
         "_last_was_accentuated",
+        "_successive_count",
     )
 
     def __init__(self) -> None:
@@ -442,10 +441,10 @@ class SuspiciousDuplicateAccentPlugin(MessDetectorPlugin):
 
 class SuspiciousRange(MessDetectorPlugin):
     __slots__ = (
-        "_suspicious_successive_range_count",
         "_character_count",
-        "_last_printable_seen",
         "_last_printable_range",
+        "_last_printable_seen",
+        "_suspicious_successive_range_count",
     )
 
     def __init__(self) -> None:
@@ -472,9 +471,10 @@ class SuspiciousRange(MessDetectorPlugin):
         unicode_range_b: str | None = info.range
 
         # Identical non-None ranges can never be suspicious.
-        if unicode_range_a != unicode_range_b or unicode_range_a is None:
-            if is_suspiciously_successive_range(unicode_range_a, unicode_range_b):
-                self._suspicious_successive_range_count += 1
+        if (
+            unicode_range_a != unicode_range_b or unicode_range_a is None
+        ) and is_suspiciously_successive_range(unicode_range_a, unicode_range_b):
+            self._suspicious_successive_range_count += 1
 
         self._last_printable_seen = character
         self._last_printable_range = unicode_range_b
@@ -499,25 +499,25 @@ class SuspiciousRange(MessDetectorPlugin):
 
 class SuperWeirdWordPlugin(MessDetectorPlugin):
     __slots__ = (
-        "_word_count",
-        "_bad_word_count",
-        "_foreign_long_count",
-        "_is_current_word_bad",
-        "_foreign_long_watch",
-        "_character_count",
         "_bad_character_count",
-        "_buffer_length",
+        "_bad_word_count",
+        "_buffer_accent_count",
+        "_buffer_first_lower",
+        "_buffer_glyph_count",
+        "_buffer_has_internal_ligature",
+        "_buffer_has_non_ascii",
         "_buffer_last_char",
         "_buffer_last_char_accentuated",
-        "_buffer_accent_count",
-        "_buffer_glyph_count",
-        "_buffer_upper_count",
-        "_buffer_first_lower",
-        "_buffer_has_non_ascii",
         "_buffer_last_char_ligature",
-        "_buffer_has_internal_ligature",
-        "_is_current_word_invalid",
+        "_buffer_length",
+        "_buffer_upper_count",
+        "_character_count",
+        "_foreign_long_count",
+        "_foreign_long_watch",
         "_invalid_word_count",
+        "_is_current_word_bad",
+        "_is_current_word_invalid",
+        "_word_count",
     )
 
     def __init__(self) -> None:
@@ -716,9 +716,9 @@ class SuspiciousKatakanaPlugin(MessDetectorPlugin):
     """Detect implausible halfwidth Katakana and uncommon CJK combinations."""
 
     __slots__ = (
-        "_katakana_count",
-        "_halfwidth_katakana_count",
         "_cjk_count",
+        "_halfwidth_katakana_count",
+        "_katakana_count",
         "_uncommon_cjk_count",
     )
 
@@ -761,13 +761,13 @@ class SuspiciousKatakanaPlugin(MessDetectorPlugin):
 class ArchaicUpperLowerPlugin(MessDetectorPlugin):
     __slots__ = (
         "_buf",
+        "_character_count",
         "_character_count_since_last_sep",
+        "_current_ascii_only",
+        "_last_alpha_seen_lower",
+        "_last_alpha_seen_upper",
         "_successive_upper_lower_count",
         "_successive_upper_lower_count_final",
-        "_character_count",
-        "_last_alpha_seen_upper",
-        "_last_alpha_seen_lower",
-        "_current_ascii_only",
     )
 
     def __init__(self) -> None:

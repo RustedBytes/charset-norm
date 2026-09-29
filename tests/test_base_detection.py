@@ -10,9 +10,9 @@ def test_empty():
     best_guess = from_bytes(b"").best()
 
     assert best_guess is not None, "Empty bytes payload SHOULD NOT return None"
-    assert (
-        best_guess.encoding == "utf_8"
-    ), "Empty bytes payload SHOULD be guessed as UTF-8 (arbitrary)"
+    assert best_guess.encoding == "utf_8", (
+        "Empty bytes payload SHOULD be guessed as UTF-8 (arbitrary)"
+    )
     assert len(best_guess.alphabets) == 0, ""
     assert best_guess.multi_byte_usage == 0.0, (
         "Empty raw payload SHOULD report 0.0 multi-byte usage without dividing by zero"
@@ -23,12 +23,12 @@ def test_bool_matches():
     guesses_not_empty = from_bytes(b"")
     guesses_empty = CharsetMatches([])
 
-    assert (
-        bool(guesses_not_empty) is True
-    ), "Bool behaviour of CharsetMatches altered, should be True"
-    assert (
-        bool(guesses_empty) is False
-    ), "Bool behaviour of CharsetMatches altered, should be False"
+    assert bool(guesses_not_empty) is True, (
+        "Bool behaviour of CharsetMatches altered, should be True"
+    )
+    assert bool(guesses_empty) is False, (
+        "Bool behaviour of CharsetMatches altered, should be False"
+    )
 
 
 def test_matches_sort_lazily():
@@ -37,8 +37,9 @@ def test_matches_sort_lazily():
     matches.append(CharsetMatch(payload, "ascii", 0.1, False, []))
     matches.append(CharsetMatch(payload, "utf_8", 0.0, False, []))
 
-    assert matches.best() is not None
-    assert matches.best().encoding == "utf_8"
+    best = matches.best()
+    assert best is not None
+    assert best.encoding == "utf_8"
     assert matches[0].encoding == "utf_8"
     assert [match.encoding for match in matches] == ["utf_8", "ascii"]
 
@@ -47,8 +48,8 @@ def test_matches_sort_lazily():
     "payload, expected_encoding",
     [
         (b"\xfe\xff", "utf_16"),
-        ("\uFEFF".encode("gb18030"), "gb18030"),
-        ("\uFEFF".encode("utf-7"), "utf_7"),
+        ("\ufeff".encode("gb18030"), "gb18030"),
+        ("\ufeff".encode("utf-7"), "utf_7"),
         (b"\xef\xbb\xbf", "utf_8"),
         ("".encode("utf_32"), "utf_32"),
     ],
@@ -57,12 +58,12 @@ def test_empty_but_with_bom_or_sig(payload, expected_encoding):
     best_guess = from_bytes(payload).best()
 
     assert best_guess is not None, "Empty detection but with SIG/BOM has failed!"
-    assert (
-        best_guess.encoding == expected_encoding
-    ), "Empty detection but with SIG/BOM is wrongly detected!"
-    assert (
-        best_guess.raw == payload
-    ), "The RAW property should contain the original payload given for detection."
+    assert best_guess.encoding == expected_encoding, (
+        "Empty detection but with SIG/BOM is wrongly detected!"
+    )
+    assert best_guess.raw == payload, (
+        "The RAW property should contain the original payload given for detection."
+    )
     assert best_guess.byte_order_mark is True, "The BOM/SIG property should return True"
     assert str(best_guess) == "", "The cast to str SHOULD be empty"
 
@@ -81,12 +82,12 @@ def test_md_triggered_but_with_bom_or_sig(payload, expected_encoding):
     best_guess = from_bytes(payload).best()
 
     assert best_guess is not None, "Detect/fallback with SIG/BOM has failed!"
-    assert (
-        best_guess.encoding == expected_encoding
-    ), "Detection SIG/BOM is wrongly detected!"
-    assert (
-        best_guess.raw == payload
-    ), "The RAW property should contain the original payload given for detection."
+    assert best_guess.encoding == expected_encoding, (
+        "Detection SIG/BOM is wrongly detected!"
+    )
+    assert best_guess.raw == payload, (
+        "The RAW property should contain the original payload given for detection."
+    )
     assert best_guess.byte_order_mark is True, "The BOM/SIG property should return True"
     assert str(best_guess) == "▶hello"
 
@@ -95,7 +96,7 @@ def test_md_triggered_but_with_bom_or_sig(payload, expected_encoding):
     "payload, expected_encoding",
     [
         (
-            ("\uFEFF" + "我没有埋怨，磋砣的只是一些时间。").encode("gb18030"),
+            ("\ufeff" + "我没有埋怨，磋砣的只是一些时间。").encode("gb18030"),
             "gb18030",
         ),
         (
@@ -107,7 +108,7 @@ def test_md_triggered_but_with_bom_or_sig(payload, expected_encoding):
             "utf_8",
         ),
         (
-            ("\uFEFF" + "🐕").encode("utf-7"),
+            ("\ufeff" + "🐕").encode("utf-7"),
             "utf_7",
         ),
     ],
@@ -116,9 +117,9 @@ def test_content_with_bom_or_sig(payload, expected_encoding):
     best_guess = from_bytes(payload).best()
 
     assert best_guess is not None, "Detection but with SIG/BOM has failed!"
-    assert (
-        best_guess.encoding == expected_encoding
-    ), "Detection but with SIG/BOM is wrongly detected!"
+    assert best_guess.encoding == expected_encoding, (
+        "Detection but with SIG/BOM is wrongly detected!"
+    )
     assert best_guess.byte_order_mark is True, "The BOM/SIG property should return True"
 
 
@@ -157,9 +158,9 @@ def test_obviously_ascii_content(payload):
     best_guess = from_bytes(payload).best()
 
     assert best_guess is not None, "Dead-simple ASCII detection has failed!"
-    assert (
-        best_guess.encoding == "ascii"
-    ), "Dead-simple ASCII detection is wrongly detected!"
+    assert best_guess.encoding == "ascii", (
+        "Dead-simple ASCII detection is wrongly detected!"
+    )
 
 
 @pytest.mark.parametrize(
@@ -181,9 +182,9 @@ def test_obviously_utf8_content(payload):
     best_guess = from_bytes(payload).best()
 
     assert best_guess is not None, "Dead-simple UTF-8 detection has failed!"
-    assert (
-        best_guess.encoding == "utf_8"
-    ), "Dead-simple UTF-8 detection is wrongly detected!"
+    assert best_guess.encoding == "utf_8", (
+        "Dead-simple UTF-8 detection is wrongly detected!"
+    )
 
 
 def test_mb_cutting_chk():
@@ -199,6 +200,7 @@ def test_mb_cutting_chk():
     best_guess = guesses.best()
 
     assert len(guesses) == 1, "cp isolation is set and given seq should be clear CP949!"
+    assert best_guess is not None
     assert best_guess.encoding == "cp949"
 
 
@@ -239,6 +241,7 @@ def test_ansi_escape_falls_back_to_unicode():
 def test_alphabets_property():
     best_guess = from_bytes("😀 Hello World! How affairs are going? 😀".encode()).best()
 
+    assert best_guess is not None
     assert "Basic Latin" in best_guess.alphabets
     assert "Emoticons" in best_guess.alphabets
     assert best_guess.alphabets.count("Basic Latin") == 1
@@ -249,6 +252,7 @@ def test_doc_example_short_cp1251():
         "Bсеки човек има право на образование.".encode("cp1251")
     ).best()
 
+    assert best_guess is not None
     assert best_guess.encoding == "cp1251"
 
 

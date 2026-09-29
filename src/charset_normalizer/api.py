@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import logging
 from os import PathLike
-from typing import BinaryIO
+from typing import BinaryIO, TextIO
 
 from . import _native
 from .constant import IANA_SUPPORTED, TRACE
 from .models import CharsetMatches
 from .utils import is_multi_byte_encoding
 
-logger = logging.getLogger("charset_normalizer")
-explain_handler = logging.StreamHandler()
+logger: logging.Logger = logging.getLogger("charset_normalizer")
+explain_handler: logging.StreamHandler[TextIO] = logging.StreamHandler()
 explain_handler.setFormatter(
     logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 )
@@ -95,7 +95,7 @@ def from_fp(
 
 
 def from_path(
-    path: str | bytes | PathLike,  # type: ignore[type-arg]
+    path: str | bytes | PathLike[str] | PathLike[bytes],
     steps: int = 5,
     chunk_size: int = 512,
     threshold: float = 0.20,
@@ -123,7 +123,7 @@ def from_path(
 
 
 def is_binary(
-    fp_or_path_or_payload: PathLike | str | BinaryIO | bytes,  # type: ignore[type-arg]
+    fp_or_path_or_payload: PathLike[str] | PathLike[bytes] | str | BinaryIO | bytes,
     steps: int = 5,
     chunk_size: int = 512,
     threshold: float = 0.20,

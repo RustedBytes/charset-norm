@@ -7,11 +7,11 @@ from charset_normalizer.cd import (
     alpha_unicode_split,
     alphabet_languages,
     characters_popularity_compare,
+    coherence_ratio,
     filter_alt_coherence_matches,
     get_target_features,
     mb_encoding_languages,
     merge_coherence_ratios,
-    coherence_ratio,
 )
 from charset_normalizer.md import mess_ratio
 from charset_normalizer.models import CharsetMatch, CharsetMatches, CliDetectionResult
@@ -33,7 +33,9 @@ from charset_normalizer.utils import (
 def test_native_backend_is_required() -> None:
     assert _native.backend_name() == "rust-pyo3"
     assert _native.__version__ == "3.5.1"
-    assert _native.from_bytes(b"plain ASCII").best().encoding == "ascii"
+    best = _native.from_bytes(b"plain ASCII").best()
+    assert best is not None
+    assert best.encoding == "ascii"
 
 
 def test_python_facades_keep_their_signatures() -> None:

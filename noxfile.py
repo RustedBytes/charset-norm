@@ -5,12 +5,19 @@ import shutil
 
 import nox
 
+PYPROJECT = nox.project.load_toml("pyproject.toml")
+
+
+def install_group(session: nox.Session, group: str) -> None:
+    """Install a PEP 735 dependency group declared in pyproject.toml."""
+    session.install(*nox.project.dependency_groups(PYPROJECT, group), silent=False)
+
 
 def test_impl(
     session: nox.Session,
 ) -> None:
     # Install deps and the package itself.
-    session.install("-r", "dev-requirements.txt", "--require-hashes", silent=False)
+    install_group(session, "dev")
 
     session.install(".", silent=False)
 
@@ -87,7 +94,7 @@ def backward_compatibility(session: nox.Session) -> None:
     git_clone(session, "https://github.com/ousret/char-dataset")
 
     # Install deps and the package itself.
-    session.install("-r", "dev-requirements.txt", "--require-hashes", silent=False)
+    install_group(session, "dev")
 
     session.install(".", silent=False)
     session.install("chardet")
@@ -104,7 +111,7 @@ def coverage(session: nox.Session) -> None:
     git_clone(session, "https://github.com/ousret/char-dataset")
 
     # Install deps and the package itself.
-    session.install("-r", "dev-requirements.txt", "--require-hashes", silent=False)
+    install_group(session, "dev")
     session.install("chardet==7.5.1")
 
     session.install(".", silent=False)
@@ -132,7 +139,7 @@ def performance(session: nox.Session) -> None:
     git_clone(session, "https://github.com/ousret/char-dataset")
 
     # Install deps and the package itself.
-    session.install("-r", "dev-requirements.txt", "--require-hashes", silent=False)
+    install_group(session, "dev")
 
     session.install(
         "chardet==7.5.1",
@@ -226,7 +233,7 @@ def lint(session: nox.Session) -> None:
 
 @nox.session
 def docs(session: nox.Session) -> None:
-    session.install("-r", "docs/requirements.txt")
+    install_group(session, "docs")
     session.install(".")
 
     session.chdir("docs")

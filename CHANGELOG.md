@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   supported codec (Unicode, single-byte code pages, CJK and ISO-2022) is decoded
   natively from tables generated out of CPython (``bin/generate_native_tables.py``).
   Detection is roughly 30x faster than the previous Rust build and faster than 3.5.1.
+- Development, documentation and CI dependencies are declared only as ``dev``,
+  ``docs`` and ``ci`` dependency groups in ``pyproject.toml``;
+  ``dev-requirements.txt``, ``docs/requirements.txt`` and ``ci-requirements.txt``
+  were removed.
 - ``CharsetMatch.fingerprint`` is now a stable hash of the decoded text instead of
   the process-salted ``hash(str)``.
 

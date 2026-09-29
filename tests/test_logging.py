@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from charset_normalizer.api import explain_handler, from_bytes
 from charset_normalizer.constant import TRACE
 from charset_normalizer.utils import set_logging_handler

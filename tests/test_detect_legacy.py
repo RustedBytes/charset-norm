@@ -7,7 +7,7 @@ from charset_normalizer.legacy import detect
 
 class TestDetectLegacy(unittest.TestCase):
     def test_detect_dict_keys(self):
-        r = detect(("\uFEFF" + "我没有埋怨，磋砣的只是一些时间。").encode("gb18030"))
+        r = detect(("\ufeff" + "我没有埋怨，磋砣的只是一些时间。").encode("gb18030"))
 
         with self.subTest("encoding key present"):
             self.assertIn("encoding", r.keys())
@@ -49,17 +49,26 @@ class TestDetectLegacy(unittest.TestCase):
 
     def test_small_payload_confidence_altered(self):
 
-        with self.subTest("Unicode should yield 1. confidence even on small bytes string"):
+        with self.subTest(
+            "Unicode should yield 1. confidence even on small bytes string"
+        ):
             r = detect("#表 10-1 クラスタ設定".encode("utf_16"))
 
             self.assertTrue(r["confidence"] == 1.0)
 
-        with self.subTest("ShiftJis should not yield 1. confidence on small bytes string"):
+        with self.subTest(
+            "ShiftJis should not yield 1. confidence on small bytes string"
+        ):
             r = detect("#表 10-1 クラスタ設定".encode("cp932"))
 
-            self.assertTrue(r["confidence"] < 1.0)
+            confidence = r["confidence"]
+            self.assertIsNotNone(confidence)
+            assert confidence is not None
+            self.assertTrue(confidence < 1.0)
 
-        with self.subTest("ShiftJis should yield 1. confidence on sufficient bytes string"):
+        with self.subTest(
+            "ShiftJis should yield 1. confidence on sufficient bytes string"
+        ):
             r = detect("#表 10-1 クラスタ設定　…　リソース同居制約".encode("cp932"))
 
             self.assertTrue(r["confidence"] == 1.0)

@@ -28,9 +28,9 @@ from charset_normalizer.utils import any_specified_encoding
 def test_detect_most_common_body_encoding(payload, expected_encoding):
     specified_encoding = any_specified_encoding(payload)
 
-    assert (
-        specified_encoding == expected_encoding
-    ), "Unable to determine properly encoding from given body"
+    assert specified_encoding == expected_encoding, (
+        "Unable to determine properly encoding from given body"
+    )
 
 
 @pytest.mark.parametrize(

@@ -983,13 +983,7 @@ COMMON_KOREAN_CHARACTERS = "一二三四五六七八九十百千萬上下左右�
 
 # Combine all into a frozenset
 COMMON_CJK_CHARACTERS = frozenset(
-    "".join(
-        [
-            COMMON_CHINESE_CHARACTERS,
-            COMMON_JAPANESE_CHARACTERS,
-            COMMON_KOREAN_CHARACTERS,
-        ]
-    )
+    f"{COMMON_CHINESE_CHARACTERS}{COMMON_JAPANESE_CHARACTERS}{COMMON_KOREAN_CHARACTERS}"
 )
 
 KO_NAMES: frozenset[str] = frozenset({"johab", "cp949", "euc_kr"})

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from glob import glob
 from math import ceil
 from os.path import isdir
@@ -18,7 +19,7 @@ def calc_percentile(data, percentile):
     p = n * percentile / 100
     sorted_data = sorted(data)
 
-    return sorted_data[max(0, int(ceil(p)) - 1)]
+    return sorted_data[max(0, ceil(p) - 1)]
 
 
 def performance_compare(arguments):
@@ -50,7 +51,7 @@ def performance_compare(arguments):
         print(
             "This script require https://github.com/Ousret/char-dataset to be cloned on package root directory"
         )
-        exit(1)
+        sys.exit(1)
 
     chardet_results = []
     charset_normalizer_results = []
@@ -141,4 +142,4 @@ def performance_compare(arguments):
 
 
 if __name__ == "__main__":
-    exit(performance_compare(argv[1:]))
+    sys.exit(performance_compare(argv[1:]))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import suppress
 from os import pardir, path, remove
 from os.path import exists
 from unittest.mock import patch
@@ -33,10 +34,8 @@ class TestCommandLineInterface(unittest.TestCase):
 
         self.assertTrue(exists(DIR_PATH + "/data/sample-arabic-1.cp1256.txt"))
 
-        try:
+        with suppress(OSError):
             remove(DIR_PATH + "/data/sample-arabic-1.cp1256.txt")
-        except:
-            pass
 
     def test_single_verbose_file(self):
         self.assertEqual(

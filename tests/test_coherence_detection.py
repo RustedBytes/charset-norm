@@ -38,9 +38,9 @@ def test_infer_language_from_cp(iana_encoding, expected_languages):
     )
 
     for expected_language in expected_languages:
-        assert (
-            expected_language in languages
-        ), "Wrongly detected language for given code page"
+        assert expected_language in languages, (
+            "Wrongly detected language for given code page"
+        )
 
 
 @pytest.mark.parametrize(

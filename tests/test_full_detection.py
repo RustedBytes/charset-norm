@@ -39,12 +39,12 @@ def test_elementary_detection(
 ):
     best_guess = from_path(DIR_PATH + f"/data/{input_data_file}").best()
 
-    assert (
-        best_guess is not None
-    ), f"Elementary detection has failed upon '{input_data_file}'"
-    assert (
-        best_guess.encoding == expected_charset
-    ), f"Elementary charset detection has failed upon '{input_data_file}'"
-    assert (
-        best_guess.language == expected_language
-    ), f"Elementary language detection has failed upon '{input_data_file}'"
+    assert best_guess is not None, (
+        f"Elementary detection has failed upon '{input_data_file}'"
+    )
+    assert best_guess.encoding == expected_charset, (
+        f"Elementary charset detection has failed upon '{input_data_file}'"
+    )
+    assert best_guess.language == expected_language, (
+        f"Elementary language detection has failed upon '{input_data_file}'"
+    )

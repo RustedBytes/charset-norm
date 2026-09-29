@@ -6,7 +6,6 @@ from typing import Generator
 
 from . import _native
 from .constant import (
-    COMMON_CJK_CHARACTERS,
     _ACCENTUATED,
     _ARABIC,
     _ARABIC_ISOLATED_FORM,
@@ -17,6 +16,7 @@ from .constant import (
     _LATIN,
     _SECONDARY_RANGE_NAMES,
     _THAI,
+    COMMON_CJK_CHARACTERS,
 )
 
 

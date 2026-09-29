@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from glob import glob
 from os.path import isdir
 from sys import argv
@@ -45,7 +46,7 @@ def cli_bc(arguments: list[str]):
         print(
             "This script require https://github.com/Ousret/char-dataset to be cloned on package root directory"
         )
-        exit(1)
+        sys.exit(1)
 
     success_count = 0
     total_count = 0
@@ -73,9 +74,11 @@ def cli_bc(arguments: list[str]):
             print(f"✅✅ '{tbt_path}' (BC)")
             continue
 
-        if (chardet_encoding is None and charset_normalizer_encoding is None) or (
-            iana_name(chardet_encoding, False)
-            == iana_name(charset_normalizer_encoding, False)
+        # Past the checks above, neither side can be None.
+        assert chardet_encoding is not None and charset_normalizer_encoding is not None
+
+        if iana_name(chardet_encoding, False) == iana_name(
+            charset_normalizer_encoding, False
         ):
             success_count += 1
             print(f"✅✅ '{tbt_path}' (BC)")
@@ -105,4 +108,4 @@ def cli_bc(arguments: list[str]):
 
 
 if __name__ == "__main__":
-    exit(cli_bc(argv[1:]))
+    sys.exit(cli_bc(argv[1:]))

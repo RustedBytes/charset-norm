@@ -101,7 +101,7 @@ ERROR_BASE = 0xFFFFF0
 def rust_str(value: str) -> str:
     out = []
     for ch in value:
-        if ch in "\\\"":
+        if ch in '\\"':
             out.append("\\" + ch)
         elif 0x20 <= ord(ch) < 0x7F:
             out.append(ch)
@@ -200,7 +200,9 @@ def probe_cjk(encoding: str, pairs: PairTable) -> bytes:
                 assert triple_prefix in (0, lead)
                 triple_prefix = lead
                 for third in range(256):
-                    decoded, error, span = try_decode_span(bytes([lead, trail, third]), encoding)
+                    decoded, error, span = try_decode_span(
+                        bytes([lead, trail, third]), encoding
+                    )
                     if decoded is not None:
                         triple.setdefault(trail, {})[third] = pairs.value(decoded)
                     elif error == "illegal" and span > 1:
@@ -258,7 +260,9 @@ def single_byte_table(encoding: str) -> list[int]:
         if decoded is None:
             table.append(0xFFFE)
         else:
-            assert len(decoded) == 1 and ord(decoded) < 0x10000 and ord(decoded) != 0xFFFE
+            assert (
+                len(decoded) == 1 and ord(decoded) < 0x10000 and ord(decoded) != 0xFFFE
+            )
             table.append(ord(decoded))
     return table
 
@@ -273,7 +277,9 @@ def write_constants(single_byte: dict[str, list[int]]) -> None:
 
     families = constant._RANGE_FAMILIES
     secondary = constant._SECONDARY_RANGE_NAMES
-    ranges = sorted(constant.UNICODE_RANGES_COMBINED.items(), key=lambda item: item[1].start)
+    ranges = sorted(
+        constant.UNICODE_RANGES_COMBINED.items(), key=lambda item: item[1].start
+    )
     emit("/// (start, stop, name, family, secondary)")
     emit("pub static UNICODE_RANGES: &[(u32, u32, &str, &str, bool)] = &[")
     for name, rng in ranges:
@@ -293,12 +299,20 @@ def write_constants(single_byte: dict[str, list[int]]) -> None:
         emit(f"    ({rust_str(a)}, {rust_str(b)}),")
     emit("];")
     for name, values in (
-        ("COMPATIBLE_WITH_ANY_RANGE_FAMILIES", constant._COMPATIBLE_WITH_ANY_RANGE_FAMILIES),
-        ("BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES", constant._BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES),
+        (
+            "COMPATIBLE_WITH_ANY_RANGE_FAMILIES",
+            constant._COMPATIBLE_WITH_ANY_RANGE_FAMILIES,
+        ),
+        (
+            "BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES",
+            constant._BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES,
+        ),
         ("ACCENT_KEYWORDS", constant._ACCENT_KEYWORDS),
     ):
         items = values if isinstance(values, tuple) else sorted(values)
-        emit(f"pub static {name}: &[&str] = &[{', '.join(rust_str(v) for v in items)}];")
+        emit(
+            f"pub static {name}: &[&str] = &[{', '.join(rust_str(v) for v in items)}];"
+        )
     emit("")
 
     emit("/// Language -> characters ordered from most to least frequent.")
@@ -325,11 +339,23 @@ def write_constants(single_byte: dict[str, list[int]]) -> None:
         if chr(cp).isdigit() and unicodedata.category(chr(cp)) != "Nd"
     ]
     emit("/// Code points with Numeric_Type=Digit (str.isdigit() beyond category Nd).")
-    emit("pub static NON_DECIMAL_DIGITS: &[u32] = &[" + ", ".join(f"{cp:#x}" for cp in digits) + "];")
+    emit(
+        "pub static NON_DECIMAL_DIGITS: &[u32] = &["
+        + ", ".join(f"{cp:#x}" for cp in digits)
+        + "];"
+    )
     emit("")
 
-    emit("pub static ZH_NAMES: &[&str] = &[" + ", ".join(rust_str(v) for v in sorted(constant.ZH_NAMES)) + "];")
-    emit("pub static KO_NAMES: &[&str] = &[" + ", ".join(rust_str(v) for v in sorted(constant.KO_NAMES)) + "];")
+    emit(
+        "pub static ZH_NAMES: &[&str] = &["
+        + ", ".join(rust_str(v) for v in sorted(constant.ZH_NAMES))
+        + "];"
+    )
+    emit(
+        "pub static KO_NAMES: &[&str] = &["
+        + ", ".join(rust_str(v) for v in sorted(constant.KO_NAMES))
+        + "];"
+    )
     emit(
         "pub static MULTI_BYTE_ENCODINGS: &[&str] = &["
         + ", ".join(rust_str(v) for v in sorted(MULTI_BYTE))
@@ -401,7 +427,10 @@ def main() -> None:
         sections.append((name, probe_iso2022(codec, prefix, width, pairs)))
     # HZ and ISO-2022-KR reuse the ISO-2022 GB2312/KSX1001 tables; make sure.
     assert probe_iso2022("hz", b"~{", 2, pairs) == dict(sections)["gb2312_7bit"]
-    assert probe_iso2022("iso2022_kr", b"\x1b$)C\x0e", 2, pairs) == dict(sections)["ksx1001"]
+    assert (
+        probe_iso2022("iso2022_kr", b"\x1b$)C\x0e", 2, pairs)
+        == dict(sections)["ksx1001"]
+    )
 
     runs = gb18030_ranges()
     ranges_blob = bytearray(struct.pack("<H", len(runs)))

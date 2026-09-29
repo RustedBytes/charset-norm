@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from codecs import lookup
 from glob import glob
 from os import sep
@@ -102,7 +103,7 @@ def cli_coverage(arguments: list[str]):
         print(
             "This script require https://github.com/Ousret/char-dataset to be cloned on package root directory"
         )
-        exit(1)
+        sys.exit(1)
 
     print(f"> using charset-normalizer {__version__} and chardet {chardet_version}")
 
@@ -161,4 +162,4 @@ def cli_coverage(arguments: list[str]):
 
 
 if __name__ == "__main__":
-    exit(cli_coverage(argv[1:]))
+    sys.exit(cli_coverage(argv[1:]))

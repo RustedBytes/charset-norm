@@ -5,7 +5,9 @@ from functools import lru_cache
 from . import _native
 from .constant import LANGUAGE_SUPPORTED_COUNT
 from .models import CoherenceMatches
-from .utils import is_multi_byte_encoding as is_multi_byte_encoding  # noqa: F401
+
+# Explicit re-export (PEP 484 alias form).
+from .utils import is_multi_byte_encoding as is_multi_byte_encoding  # noqa: PLC0414
 
 
 def encoding_unicode_range(iana_name: str) -> list[str]:
@@ -16,12 +18,12 @@ def unicode_range_languages(primary_range: str) -> list[str]:
     return _native.unicode_range_languages(primary_range)
 
 
-@lru_cache()
+@lru_cache
 def encoding_languages(iana_name: str) -> list[str]:
     return _native.encoding_languages(iana_name)
 
 
-@lru_cache()
+@lru_cache
 def mb_encoding_languages(iana_name: str) -> list[str]:
     return _native.mb_encoding_languages(iana_name)
 

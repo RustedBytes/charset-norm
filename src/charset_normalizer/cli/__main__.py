@@ -7,8 +7,7 @@ from os.path import abspath, basename, dirname, join, realpath
 from platform import python_version
 from unicodedata import unidata_version
 
-from charset_normalizer import _native
-from charset_normalizer import from_fp
+from charset_normalizer import _native, from_fp
 from charset_normalizer.models import CliDetectionResult
 from charset_normalizer.version import __version__
 
@@ -59,7 +58,7 @@ class FileType:
         self._encoding = encoding
         self._errors = errors
 
-    def __call__(self, string: str) -> typing.IO:  # type: ignore[type-arg]
+    def __call__(self, string: str) -> typing.IO[typing.Any]:
         # the special argument "-" means sys.std{in,out}
         if string == "-":
             if "r" in self._mode:
@@ -288,9 +287,7 @@ def cli_detect(argv: list[str] | None = None) -> int:
             if args.normalize is True:
                 if best_guess.encoding.startswith("utf") is True:
                     print(
-                        '"{}" file does not need to be normalized, as it already came from unicode.'.format(
-                            my_file.name
-                        ),
+                        f'"{my_file.name}" file does not need to be normalized, as it already came from unicode.',
                         file=sys.stderr,
                     )
                     if my_file.closed is False:
@@ -309,9 +306,7 @@ def cli_detect(argv: list[str] | None = None) -> int:
                 elif (
                     args.force is False
                     and query_yes_no(
-                        'Are you sure to normalize "{}" by replacing it ?'.format(
-                            my_file.name
-                        ),
+                        f'Are you sure to normalize "{my_file.name}" by replacing it ?',
                         "no",
                     )
                     is False

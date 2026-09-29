@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any, Iterator, overload
+from typing import Any, Iterator, Sequence, overload
 
 __version__: str
 
@@ -15,8 +13,6 @@ class CharsetMatch:
         decoded_payload: str | None = None,
         preemptive_declaration: str | None = None,
     ) -> None: ...
-    def __str__(self) -> str: ...
-    def __repr__(self) -> str: ...
     def __eq__(self, other: object) -> bool: ...
     def __lt__(self, other: object) -> bool: ...
     def add_submatch(self, other: CharsetMatch) -> None: ...
@@ -96,8 +92,7 @@ class CliDetectionResult:
     chaos: float
     coherence: float
     is_preferred: bool
-    @property
-    def __dict__(self) -> dict[str, Any]: ...
+    __dict__: dict[str, Any]
     def to_json(self) -> str: ...
 
 def backend_name() -> str: ...
@@ -151,7 +146,7 @@ def cp_similarity(iana_name_a: str, iana_name_b: str) -> float: ...
 def cut_sequence_chunks(
     sequences: bytes | bytearray,
     encoding_iana: str,
-    offsets: range,
+    offsets: Sequence[int],
     chunk_size: int,
     bom_or_sig_available: bool,
     strip_sig_or_bom: bool,

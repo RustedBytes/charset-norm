@@ -189,7 +189,7 @@ python -m charset_normalizer ./data/sample.1.fr.srt
 ```python
 from charset_normalizer import from_path
 
-results = from_path('./my_subtitle.srt')
+results = from_path("./my_subtitle.srt")
 
 print(str(results.best()))
 ```

@@ -46,7 +46,7 @@ ci = [
   "nox==2026.2.9; python_version == '3.8'",
   "nox>=2026.4.10; python_version >= '3.9'",
   "build==1.2.2.post1; python_version == '3.8'",
-  "build==1.4.3; python_version >= '3.9'"
+  "build==1.4.3; python_version >= '3.9'",
 ]
 dev = [
   "pytest==8.3.5; python_version == '3.8'",
@@ -54,7 +54,13 @@ dev = [
   "pytest==9.0.3; python_version >= '3.10'",
   "coverage==7.6.1; python_version == '3.8'",
   "coverage==7.10.7; python_version == '3.9'",
-  "coverage>=7.13.5; python_version >= '3.10'"
+  "coverage>=7.13.5; python_version >= '3.10'",
+  "ruff==0.16.9",
+  "pyright==1.1.414",
+]
+docs = [
+  "Sphinx",
+  "furo",
 ]
 
 [tool.maturin]
@@ -85,6 +91,25 @@ log_level = "DEBUG"
 filterwarnings = [
     "error",
 ]
+
+[tool.ruff]
+target-version = "py38"
+extend-exclude = ["data", "docs"]
+
+[tool.pyright]
+include = ["src", "tests", "bin"]
+pythonVersion = "3.8"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+# The comparison scripts need chardet, which is not a development dependency.
+[[tool.pyright.executionEnvironments]]
+root = "bin"
+reportMissingImports = "warning"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
 
 [tool.isort]
 profile = "black"
