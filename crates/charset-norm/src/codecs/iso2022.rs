@@ -7,10 +7,10 @@ use super::{DecodeError, Errors, Iso2022Variant};
 /* HZ and ISO-2022 (ports of CPython's stateful decoders)                  */
 /* ---------------------------------------------------------------------- */
 
-pub(super) fn decode_hz(data: &[u8], errors: Errors) -> Result<String, DecodeError> {
+pub(super) fn decode_hz(data: &[u8], errors: Errors, out: &mut String) -> Result<(), DecodeError> {
     let tables = cjk();
     let gb2312 = &tables.iso2022["gb2312_7bit"];
-    let mut out = String::with_capacity(data.len());
+    out.reserve(data.len());
     let mut position = 0usize;
     let mut gb_mode = false;
     while position < data.len() {
@@ -47,7 +47,7 @@ pub(super) fn decode_hz(data: &[u8], errors: Errors) -> Result<String, DecodeErr
         } else {
             match gb2312.get(byte, rest[1]) {
                 Some(value) => {
-                    push_value(&mut out, value, &tables.pairs)?;
+                    push_value(out, value, &tables.pairs)?;
                     Step::Ok(2)
                 }
                 None => Step::Error(1),
@@ -57,7 +57,7 @@ pub(super) fn decode_hz(data: &[u8], errors: Errors) -> Result<String, DecodeErr
             break;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 const DBCS: u8 = 0x80;
@@ -292,14 +292,15 @@ pub(super) fn decode_iso2022(
     variant: Iso2022Variant,
     data: &[u8],
     errors: Errors,
-) -> Result<String, DecodeError> {
+    out: &mut String,
+) -> Result<(), DecodeError> {
     const ESC: u8 = 0x1B;
     const SO: u8 = 0x0E;
     const SI: u8 = 0x0F;
     const LF: u8 = 0x0A;
 
     let config = iso2022_config(variant);
-    let mut out = String::with_capacity(data.len());
+    out.reserve(data.len());
     let mut g = [CHARSET_ASCII; 4];
     let mut shifted = false;
     let mut escape_throughout = false;
@@ -331,13 +332,13 @@ pub(super) fn decode_iso2022(
                     Err(step) => step,
                 }
             }
-            ESC if config.use_g2 && rest[1] == b'N' => single_shift(g[2], rest, &mut out),
+            ESC if config.use_g2 && rest[1] == b'N' => single_shift(g[2], rest, out),
             ESC => {
                 out.push(char::from(ESC));
                 escape_throughout = true;
                 Step::Ok(1)
             }
-            SI | SO if config.no_shift => bypass(&mut out),
+            SI | SO if config.no_shift => bypass(out),
             SI => {
                 shifted = false;
                 Step::Ok(1)
@@ -351,14 +352,14 @@ pub(super) fn decode_iso2022(
                 out.push('\n');
                 Step::Ok(1)
             }
-            _ if byte < 0x20 => bypass(&mut out),
+            _ if byte < 0x20 => bypass(out),
             _ if byte >= 0x80 => Step::Error(1),
             _ => {
                 let charset = if shifted { g[1] } else { g[0] };
                 if charset == CHARSET_ASCII {
-                    bypass(&mut out)
+                    bypass(out)
                 } else {
-                    designated(&config, charset, rest, &mut out)?
+                    designated(&config, charset, rest, out)?
                 }
             }
         };
@@ -366,5 +367,5 @@ pub(super) fn decode_iso2022(
             break;
         }
     }
-    Ok(out)
+    Ok(())
 }

@@ -1,5 +1,6 @@
 //! Detection results.
 
+use std::borrow::Cow;
 use std::hash::{DefaultHasher, Hasher};
 use std::sync::{Arc, OnceLock};
 
@@ -11,12 +12,12 @@ use crate::{Error, TOO_BIG_SEQUENCE, pyfloat, unicode};
 #[derive(Clone, Debug)]
 pub struct CharsetMatch {
     payload: Arc<[u8]>,
-    encoding: String,
+    encoding: Cow<'static, str>,
     chaos: f64,
     has_sig_or_bom: bool,
-    languages: Vec<(String, f64)>,
-    decoded: OnceLock<Arc<str>>,
-    preemptive_declaration: Option<String>,
+    languages: Arc<[(Cow<'static, str>, f64)]>,
+    decoded: OnceLock<Arc<String>>,
+    preemptive_declaration: Option<Cow<'static, str>>,
     submatches: Vec<CharsetMatch>,
     fingerprint: OnceLock<u64>,
     char_count: OnceLock<usize>,
@@ -26,25 +27,28 @@ pub struct CharsetMatch {
 impl CharsetMatch {
     /// Build a match. `languages` holds `(language, coherence)` pairs, best
     /// first; `decoded` may carry the already decoded text.
+    ///
+    /// Names are borrowed when static (as produced by detection) and owned
+    /// otherwise; cloning a match never copies its payload or text.
     pub fn new(
         payload: impl Into<Arc<[u8]>>,
-        encoding: impl Into<String>,
+        encoding: impl Into<Cow<'static, str>>,
         chaos: f64,
         has_sig_or_bom: bool,
-        languages: Vec<(String, f64)>,
+        languages: impl Into<Arc<[(Cow<'static, str>, f64)]>>,
         decoded: Option<String>,
-        preemptive_declaration: Option<String>,
+        preemptive_declaration: Option<Cow<'static, str>>,
     ) -> Self {
         let decoded_cell = OnceLock::new();
         if let Some(text) = decoded {
-            let _ = decoded_cell.set(Arc::from(text));
+            let _ = decoded_cell.set(Arc::new(text));
         }
         Self {
             payload: payload.into(),
             encoding: encoding.into(),
             chaos,
             has_sig_or_bom,
-            languages,
+            languages: languages.into(),
             decoded: decoded_cell,
             preemptive_declaration,
             submatches: Vec::new(),
@@ -90,13 +94,13 @@ impl CharsetMatch {
     }
 
     /// Detected languages with their coherence, best first.
-    pub fn language_ratios(&self) -> &[(String, f64)] {
+    pub fn language_ratios(&self) -> &[(Cow<'static, str>, f64)] {
         &self.languages
     }
 
     /// Detected languages, best first.
     pub fn languages(&self) -> Vec<&str> {
-        self.languages.iter().map(|item| item.0.as_str()).collect()
+        self.languages.iter().map(|item| &*item.0).collect()
     }
 
     /// Most probable language, falling back on what the encoding suggests.
@@ -104,7 +108,7 @@ impl CharsetMatch {
         if let Some((language, _)) = self.languages.first() {
             return language;
         }
-        if self.could_be_from_charset().contains(&"ascii") {
+        if self.could_be_from("ascii") {
             return "English";
         }
         let languages = encoding::target_languages(&self.encoding);
@@ -143,19 +147,19 @@ impl CharsetMatch {
         if self.has_sig_or_bom && self.encoding == "utf_7" && text.starts_with('\u{feff}') {
             text.remove(0);
         }
-        Ok(self.decoded.get_or_init(|| Arc::from(text)))
+        Ok(self.decoded.get_or_init(|| Arc::new(text)))
     }
 
     /// The decoded text if it is already available, without decoding.
     pub fn cached_decoded(&self) -> Option<&str> {
-        self.decoded.get().map(|text| &**text)
+        self.decoded.get().map(|text| text.as_str())
     }
 
     /// Replace (or drop) the cached decoded text.
     pub fn set_decoded(&mut self, text: Option<String>) {
         self.decoded = OnceLock::new();
         if let Some(text) = text {
-            let _ = self.decoded.set(Arc::from(text));
+            let _ = self.decoded.set(Arc::new(text));
         }
     }
 
@@ -231,10 +235,15 @@ impl CharsetMatch {
         !self.submatches.is_empty()
     }
 
+    /// Whether this match or one of its submatches uses `encoding`.
+    fn could_be_from(&self, encoding: &str) -> bool {
+        self.encoding == encoding || self.submatches.iter().any(|item| item.encoding == encoding)
+    }
+
     /// This match's encoding followed by those of its submatches.
     pub fn could_be_from_charset(&self) -> Vec<&str> {
-        std::iter::once(self.encoding.as_str())
-            .chain(self.submatches.iter().map(|item| item.encoding.as_str()))
+        std::iter::once(&*self.encoding)
+            .chain(self.submatches.iter().map(|item| &*item.encoding))
             .collect()
     }
 
@@ -476,9 +485,7 @@ impl CharsetMatches {
     #[must_use]
     pub fn get_by_encoding(&self, encoding: &str) -> Option<&CharsetMatch> {
         let name = encoding::iana_name(encoding, false).ok()?;
-        self.results
-            .iter()
-            .find(|item| item.could_be_from_charset().contains(&name.as_str()))
+        self.results.iter().find(|item| item.could_be_from(&name))
     }
 
     /// Matches in rank order.
@@ -570,7 +577,7 @@ impl PendingMatches {
 mod tests {
     use super::*;
 
-    fn sample(encoding: &str, chaos: f64, text: &str) -> CharsetMatch {
+    fn sample(encoding: &'static str, chaos: f64, text: &str) -> CharsetMatch {
         CharsetMatch::new(
             text.as_bytes().to_vec(),
             encoding,

@@ -31,6 +31,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Removed the Sphinx documentation, pre-commit, Read the Docs, OSV scanner and
   community files; coverage settings moved to ``[tool.coverage]`` in
   ``pyproject.toml`` and ``nox -s lint`` now runs ruff and pyright directly.
+- Detection allocates about 97% less (21 instead of 646 allocations per file
+  on the test corpus) and runs about 25% fewer instructions: per-thread
+  reusable buffers, interned sample chunks, static language lists,
+  allocation-free coherence analysis, flattened CJK tables and an ASCII fast
+  path for single-byte code pages.
+- `from_bytes` releases the GIL while detecting, so other Python threads keep
+  running; log records are replayed to `logging` afterwards.
+- Rust API: `codecs::decode_into` and `ChunkCutter::next_into` decode into
+  reusable buffers; `detect` takes `&Arc<[u8]>`; language lists are
+  `&'static` slices; `CharsetMatch` names are `Cow<'static, str>`.
 - Release builds use fat LTO and the mimalloc allocator (about 8% fewer
   instructions per detection than the system allocator with thin LTO).
 - ``CharsetMatch.fingerprint`` is now a stable hash of the decoded text instead of

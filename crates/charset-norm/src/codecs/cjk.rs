@@ -34,24 +34,28 @@ const PAIR_BASE: u32 = 0x11_0000;
 /// Marks an invalid sequence spanning `value - ERROR_BASE` bytes.
 const ERROR_BASE: u32 = 0xFF_FFF0;
 
-struct Row {
-    first: u8,
+/// Rows keyed by their first byte, each spanning a contiguous trail range,
+/// flattened into one value array.
+pub(super) struct Rows {
+    /// Index in `values` of each row's first trail byte.
+    starts: [u32; 256],
+    /// First trail byte of each row.
+    firsts: [u8; 256],
+    /// Number of trail bytes in each row (0 for no row).
+    lengths: [u16; 256],
     values: Vec<u32>,
 }
 
-/// Rows keyed by their first byte, each spanning a contiguous trail range.
-pub(super) struct Rows {
-    rows: Vec<Option<Row>>,
-}
-
 impl Rows {
+    #[inline]
     pub(super) fn get(&self, first: u8, second: u8) -> Option<u32> {
-        let row = self.rows[first as usize].as_ref()?;
-        let offset = second.checked_sub(row.first)? as usize;
-        row.values
-            .get(offset)
-            .copied()
-            .filter(|value| *value != NONE)
+        let lead = usize::from(first);
+        let offset = usize::from(second.wrapping_sub(self.firsts[lead]));
+        if offset >= usize::from(self.lengths[lead]) {
+            return None;
+        }
+        let value = self.values[self.starts[lead] as usize + offset];
+        (value != NONE).then_some(value)
     }
 }
 
@@ -107,15 +111,24 @@ impl<'a> Reader<'a> {
         u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
     }
     fn rows(&mut self) -> Rows {
-        let mut rows: Vec<Option<Row>> = (0..256).map(|_| None).collect();
+        let mut rows = Rows {
+            starts: [0; 256],
+            firsts: [0; 256],
+            lengths: [0; 256],
+            values: Vec::new(),
+        };
         for _ in 0..self.u16() {
-            let lead = self.u8();
-            let first = self.u8();
-            let count = self.u16() as usize;
-            let values = (0..count).map(|_| self.u24()).collect();
-            rows[lead as usize] = Some(Row { first, values });
+            let lead = usize::from(self.u8());
+            rows.firsts[lead] = self.u8();
+            let count = self.u16();
+            rows.starts[lead] = u32::try_from(rows.values.len()).unwrap_or(u32::MAX);
+            rows.lengths[lead] = count;
+            for _ in 0..count {
+                let value = self.u24();
+                rows.values.push(value);
+            }
         }
-        Rows { rows }
+        rows
     }
 }
 
@@ -332,16 +345,17 @@ pub(super) fn decode_cjk(
     codec: &CjkCodec,
     data: &[u8],
     errors: Errors,
-) -> Result<String, DecodeError> {
+    out: &mut String,
+) -> Result<(), DecodeError> {
     let tables = cjk();
     let is_euc_kr = std::ptr::eq(codec, tables.codec("euc_kr"));
     let is_gb18030 = std::ptr::eq(codec, tables.codec("gb18030"));
-    let mut out = String::with_capacity(data.len() * 2);
+    out.reserve(data.len() * 2);
     let mut position = 0usize;
     while position < data.len() {
         if codec.ascii_identity {
             let run = ascii_prefix(&data[position..]);
-            push_ascii(&mut out, &data[position..position + run]);
+            push_ascii(out, &data[position..position + run]);
             position += run;
             if position == data.len() {
                 break;
@@ -351,7 +365,7 @@ pub(super) fn decode_cjk(
         let lead = rest[0];
         let step = match codec.need[lead as usize] {
             1 => {
-                push_value(&mut out, codec.single[lead as usize], &tables.pairs)?;
+                push_value(out, codec.single[lead as usize], &tables.pairs)?;
                 Step::Ok(1)
             }
             2 if rest.len() < 2 => Step::Incomplete,
@@ -366,21 +380,18 @@ pub(super) fn decode_cjk(
                 }
             }
             2 if is_gb18030 && (0x30..=0x39).contains(&rest[1]) => {
-                gb18030_four_byte(rest, &mut out, &tables.gb18030_ranges)
+                gb18030_four_byte(rest, out, &tables.gb18030_ranges)
             }
-            2 => table_step(codec.double.get(lead, rest[1]), 2, &mut out, &tables.pairs)?,
+            2 => table_step(codec.double.get(lead, rest[1]), 2, out, &tables.pairs)?,
             3 if rest.len() < 3 => Step::Incomplete,
-            3 if lead == codec.triple_prefix => table_step(
-                codec.triple.get(rest[1], rest[2]),
-                3,
-                &mut out,
-                &tables.pairs,
-            )?,
+            3 if lead == codec.triple_prefix => {
+                table_step(codec.triple.get(rest[1], rest[2]), 3, out, &tables.pairs)?
+            }
             _ => Step::Error(1),
         };
         if !advance(step, errors, &mut position)? {
             break;
         }
     }
-    Ok(out)
+    Ok(())
 }

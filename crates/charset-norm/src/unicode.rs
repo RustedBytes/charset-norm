@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use unicode_general_category::{GeneralCategory, get_general_category};
 
+use crate::stackfmt::StackStr;
 use crate::tables::{
     ACCENT_KEYWORDS, BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES, COMMON_CJK_CHARACTERS,
     COMMON_SAFE_ASCII_CHARACTERS, COMPATIBLE_RANGE_FAMILIES, COMPATIBLE_WITH_ANY_RANGE_FAMILIES,
@@ -108,7 +109,14 @@ fn flags_from_name(character: char) -> u16 {
     let Some(name) = unicode_names2::name(character) else {
         return 0;
     };
-    let description = name.to_string();
+    // Unicode names are at most 88 bytes long; the heap is only a fallback.
+    match StackStr::<128>::format(&name) {
+        Some(description) => flags_from_description(description.as_str()),
+        None => flags_from_description(&name.to_string()),
+    }
+}
+
+fn flags_from_description(description: &str) -> u16 {
     let mut flags = 0u16;
     if description.contains("LATIN") {
         flags |= LATIN;

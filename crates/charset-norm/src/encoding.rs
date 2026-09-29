@@ -1,12 +1,15 @@
 //! Code page names, signatures and the languages a code page can express.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use regex::Regex;
 
+use std::fmt::Write as _;
+
 use crate::Error;
 use crate::codecs;
+use crate::stackfmt::StackStr;
 use crate::tables::{self, ENCODING_ALIASES, IANA_SUPPORTED_MB_FIRST, KO_NAMES, ZH_NAMES};
 use crate::unicode;
 
@@ -143,44 +146,75 @@ pub(crate) fn encoding_indication() -> &'static Regex {
 /// let html = br#"<meta charset="windows-1252">"#;
 /// assert_eq!(charset_norm::encoding::any_specified_encoding(html, 8192), Some("cp1252"));
 /// ```
+#[must_use]
 pub fn any_specified_encoding(payload: &[u8], search_zone: usize) -> Option<&'static str> {
     let search = &payload[..payload.len().min(search_zone)];
-    let lowered: Vec<u8> = search.iter().map(u8::to_ascii_lowercase).collect();
-    if !lowered.windows(6).any(|part| part == b"coding")
-        && !lowered.windows(7).any(|part| part == b"charset")
+    if !search
+        .windows(6)
+        .any(|part| part.eq_ignore_ascii_case(b"coding"))
+        && !search
+            .windows(7)
+            .any(|part| part.eq_ignore_ascii_case(b"charset"))
     {
         return None;
     }
-    let decoded: String = search
-        .iter()
-        .filter(|byte| byte.is_ascii())
-        .map(|&byte| byte as char)
-        .collect();
-    encoding_indication()
-        .captures_iter(&decoded)
-        .filter_map(|captures| captures.get(1))
-        .find_map(|specified| {
-            tables::iana_lookup(&specified.as_str().to_lowercase().replace('-', "_"))
-        })
+    // Non-ASCII bytes are dropped before matching, as the reference does.
+    let filtered: String;
+    let decoded: &str = if search.is_ascii() {
+        std::str::from_utf8(search).unwrap_or_default()
+    } else {
+        filtered = search
+            .iter()
+            .filter(|byte| byte.is_ascii())
+            .map(|&byte| char::from(byte))
+            .collect();
+        &filtered
+    };
+    let regex = encoding_indication();
+    let mut locations = regex.capture_locations();
+    let mut start = 0;
+    while let Some(found) = regex.captures_read_at(&mut locations, decoded, start) {
+        start = found.end();
+        let Some((from, to)) = locations.get(1) else {
+            continue;
+        };
+        // Code page names are short; longer candidates cannot be known.
+        let mut normalized = StackStr::<64>::new();
+        let fits = decoded[from..to].chars().all(|character| {
+            let character = if character == '-' {
+                '_'
+            } else {
+                character.to_ascii_lowercase()
+            };
+            normalized.write_char(character).is_ok()
+        });
+        if let Some(name) = fits
+            .then(|| tables::iana_lookup(normalized.as_str()))
+            .flatten()
+        {
+            return Some(name);
+        }
+    }
+    None
 }
 
 /// Languages associated with a multi-byte (CJK) code page.
 #[must_use]
-pub fn mb_encoding_languages(encoding: &str) -> Vec<&'static str> {
+pub fn mb_encoding_languages(encoding: &str) -> &'static [&'static str] {
     if encoding.starts_with("shift_")
         || encoding.starts_with("iso2022_jp")
         || encoding.starts_with("euc_j")
         || encoding == "cp932"
     {
-        return vec!["Japanese"];
+        return &["Japanese"];
     }
     if encoding.starts_with("gb") || ZH_NAMES.contains(&encoding) {
-        return vec!["Chinese"];
+        return &["Chinese"];
     }
     if encoding.starts_with("iso2022_kr") || KO_NAMES.contains(&encoding) {
-        return vec!["Korean"];
+        return &["Korean"];
     }
-    Vec::new()
+    &[]
 }
 
 /// Unicode ranges a single-byte code page mostly decodes into.
@@ -243,35 +277,45 @@ pub fn unicode_range_languages(primary_range: &str) -> Vec<&'static str> {
 /// # Errors
 ///
 /// [`Error::MultiByteEncoding`] for multi-byte encodings.
-pub fn encoding_languages(encoding: &str) -> Result<Vec<&'static str>, Error> {
+pub fn encoding_languages(encoding: &str) -> Result<&'static [&'static str], Error> {
     if is_multi_byte_encoding(encoding) {
         return Err(Error::MultiByteEncoding(encoding.to_owned()));
     }
     Ok(single_byte_languages(encoding))
 }
 
-/// [`encoding_languages`] for single-byte code pages, memoized.
-pub(crate) fn single_byte_languages(encoding: &str) -> Vec<&'static str> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Vec<&'static str>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(Default::default);
-    if let Some(value) = cache.lock().ok().and_then(|map| map.get(encoding).cloned()) {
-        return value;
-    }
-    let value = match encoding_unicode_range(encoding) {
-        Err(_) => Vec::new(),
-        Ok(ranges) => match ranges.iter().find(|range| !range.contains("Latin")) {
-            None => vec!["Latin Based"],
-            Some(primary) => unicode_range_languages(primary),
-        },
-    };
-    if let Ok(mut map) = cache.lock() {
-        map.insert(encoding.to_owned(), value.clone());
-    }
-    value
+/// [`encoding_languages`] for single-byte code pages, computed once for
+/// every native code page.
+pub(crate) fn single_byte_languages(encoding: &str) -> &'static [&'static str] {
+    static TABLE: OnceLock<Vec<(&'static str, Vec<&'static str>)>> = OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        let mut table: Vec<(&'static str, Vec<&'static str>)> = codecs::single_byte_names()
+            .map(|name| {
+                let languages = match encoding_unicode_range(name) {
+                    Err(_) => Vec::new(),
+                    Ok(ranges) => match ranges.iter().find(|range| !range.contains("Latin")) {
+                        None => vec!["Latin Based"],
+                        Some(primary) => unicode_range_languages(primary),
+                    },
+                };
+                (name, languages)
+            })
+            .collect();
+        table.sort_unstable_by_key(|entry| entry.0);
+        table
+    });
+    codecs::single_byte_name(encoding)
+        .and_then(|name| {
+            table
+                .binary_search_by_key(&name, |entry| entry.0)
+                .ok()
+                .map(|index| table[index].1.as_slice())
+        })
+        .unwrap_or(&[])
 }
 
 /// Languages an encoding can express, whether single- or multi-byte.
-pub(crate) fn target_languages(encoding: &str) -> Vec<&'static str> {
+pub(crate) fn target_languages(encoding: &str) -> &'static [&'static str] {
     if is_multi_byte_encoding(encoding) {
         mb_encoding_languages(encoding)
     } else {

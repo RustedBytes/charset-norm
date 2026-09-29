@@ -1,5 +1,6 @@
 //! Python result classes, backed by the core `CharsetMatch`.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -147,9 +148,12 @@ impl CharsetMatch {
                 guessed_encoding,
                 mean_mess_ratio,
                 has_sig_or_bom,
-                languages,
+                languages
+                    .into_iter()
+                    .map(|(language, ratio)| (Cow::Owned(language), ratio))
+                    .collect::<Vec<_>>(),
                 decoded_payload,
-                preemptive_declaration,
+                preemptive_declaration.map(Cow::Owned),
             ),
             payload: payload.clone().unbind(),
             leaves: Vec::new(),

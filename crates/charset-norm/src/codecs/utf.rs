@@ -2,17 +2,24 @@
 
 use super::{DecodeError, Endian, Errors};
 
-pub(super) fn decode_utf8(data: &[u8], errors: Errors) -> Result<String, DecodeError> {
+pub(super) fn decode_utf8(
+    data: &[u8],
+    errors: Errors,
+    out: &mut String,
+) -> Result<(), DecodeError> {
     match std::str::from_utf8(data) {
-        Ok(value) => Ok(value.to_owned()),
+        Ok(value) => {
+            out.push_str(value);
+            Ok(())
+        }
         Err(_) if errors == Errors::Strict => Err(DecodeError::Invalid),
         Err(_) => {
             // Invalid maximal subparts are dropped, as CPython's "ignore" does.
-            let mut out = String::with_capacity(data.len());
+            out.reserve(data.len());
             for chunk in data.utf8_chunks() {
                 out.push_str(chunk.valid());
             }
-            Ok(out)
+            Ok(())
         }
     }
 }
@@ -43,7 +50,8 @@ pub(super) fn decode_utf16(
     data: &[u8],
     endian: Endian,
     errors: Errors,
-) -> Result<String, DecodeError> {
+    out: &mut String,
+) -> Result<(), DecodeError> {
     let (mut data, little) = match endian {
         Endian::Little => (data, true),
         Endian::Big => (data, false),
@@ -67,7 +75,7 @@ pub(super) fn decode_utf16(
     if errors == Errors::Strict && !valid_utf16(data, little) {
         return Err(DecodeError::Invalid);
     }
-    let mut out = String::with_capacity(data.len());
+    out.reserve(data.len());
     while !data.is_empty() {
         if data.len() < 2 {
             // Truncated data: the error spans the rest of the input.
@@ -100,14 +108,15 @@ pub(super) fn decode_utf16(
         }
         data = &data[2..];
     }
-    Ok(out)
+    Ok(())
 }
 
 pub(super) fn decode_utf32(
     data: &[u8],
     endian: Endian,
     errors: Errors,
-) -> Result<String, DecodeError> {
+    out: &mut String,
+) -> Result<(), DecodeError> {
     let (mut data, little) = match endian {
         Endian::Little => (data, true),
         Endian::Big => (data, false),
@@ -136,7 +145,7 @@ pub(super) fn decode_utf32(
             return Err(DecodeError::Invalid);
         }
     }
-    let mut out = String::with_capacity(data.len());
+    out.reserve(data.len());
     while !data.is_empty() {
         if data.len() < 4 {
             if errors == Errors::Strict {
@@ -157,7 +166,7 @@ pub(super) fn decode_utf32(
         }
         data = &data[4..];
     }
-    Ok(out)
+    Ok(())
 }
 
 fn is_base64(byte: u8) -> bool {
@@ -176,8 +185,12 @@ fn from_base64(byte: u8) -> u32 {
 
 /// Port of `CPython`'s `PyUnicode_DecodeUTF7Stateful` (final mode). A lone
 /// surrogate, which a Rust string cannot hold, is reported as an error.
-pub(super) fn decode_utf7(data: &[u8], errors: Errors) -> Result<String, DecodeError> {
-    let mut out = String::with_capacity(data.len());
+pub(super) fn decode_utf7(
+    data: &[u8],
+    errors: Errors,
+    out: &mut String,
+) -> Result<(), DecodeError> {
+    out.reserve(data.len());
     let mut position = 0usize;
     let mut in_shift = false;
     let mut shift_start = 0usize;
@@ -272,5 +285,5 @@ pub(super) fn decode_utf7(data: &[u8], errors: Errors) -> Result<String, DecodeE
         let _ = shift_start;
         fail!();
     }
-    Ok(out)
+    Ok(())
 }

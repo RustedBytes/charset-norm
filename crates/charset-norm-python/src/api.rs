@@ -5,7 +5,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyByteArray, PyBytes};
 
-use crate::logging::PyLogger;
+use crate::logging::BufferedLogger;
 use crate::models::{CharsetMatches, payload_bytes};
 
 #[pyfunction(signature = (sequences, steps=5, chunk_size=512, threshold=0.2, cp_isolation=None, cp_exclusion=None, preemptive_behaviour=true, explain=false, language_threshold=0.1, enable_fallback=true))]
@@ -40,8 +40,10 @@ pub(crate) fn from_bytes(
         language_threshold,
         enable_fallback,
     };
-    let logger = PyLogger::new(py)?;
-    let results = charset_norm::detect(&payload_bytes(sequences)?, &options, &logger);
-    logger.finish()?;
+    let payload = payload_bytes(sequences)?;
+    let logger = BufferedLogger::capture(py)?;
+    // Detection is pure Rust: let other Python threads run meanwhile.
+    let results = py.detach(|| charset_norm::detect(&payload, &options, &logger));
+    logger.replay(py)?;
     CharsetMatches::wrap(py, results, sequences)
 }

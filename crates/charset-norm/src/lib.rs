@@ -33,6 +33,7 @@ pub mod log;
 mod matches;
 pub mod mess;
 mod pyfloat;
+mod stackfmt;
 mod tables;
 pub mod unicode;
 

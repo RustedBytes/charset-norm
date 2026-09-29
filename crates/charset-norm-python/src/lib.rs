@@ -13,7 +13,7 @@ mod api;
 mod logging;
 mod models;
 
-use logging::PyLogger;
+use logging::BufferedLogger;
 
 /// Detection allocates many short-lived strings; mimalloc handles that
 /// pattern noticeably faster than the system allocators.
@@ -239,7 +239,7 @@ fn cut_sequence_chunks(
 /* ---------------------------------------------------------------------- */
 
 #[pyfunction]
-fn mb_encoding_languages(iana_name: &str) -> Vec<&'static str> {
+fn mb_encoding_languages(iana_name: &str) -> &'static [&'static str] {
     encoding::mb_encoding_languages(iana_name)
 }
 
@@ -254,7 +254,7 @@ fn unicode_range_languages(primary_range: &str) -> Vec<&'static str> {
 }
 
 #[pyfunction]
-fn encoding_languages(encoding: &str) -> PyResult<Vec<&'static str>> {
+fn encoding_languages(encoding: &str) -> PyResult<&'static [&'static str]> {
     encoding::encoding_languages(encoding).map_err(to_py_error)
 }
 
@@ -298,8 +298,12 @@ fn characters_popularity_compare(language: &str, ordered_characters: Vec<String>
 }
 
 #[pyfunction]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 extracts sequence arguments as owned values"
+)]
 fn merge_coherence_ratios(results: Vec<Vec<(String, f64)>>) -> Vec<(String, f64)> {
-    coherence::merge_coherence_ratios(results)
+    coherence::merge_coherence_ratios(&results)
 }
 
 #[pyfunction]
@@ -332,9 +336,10 @@ fn mess_ratio(
     maximum_threshold: f64,
     debug: bool,
 ) -> PyResult<f64> {
-    let logger = PyLogger::new(py)?;
-    let ratio = mess::mess_ratio_with(decoded_sequence, maximum_threshold, debug, &logger);
-    logger.finish()?;
+    let logger = BufferedLogger::capture(py)?;
+    let ratio =
+        py.detach(|| mess::mess_ratio_with(decoded_sequence, maximum_threshold, debug, &logger));
+    logger.replay(py)?;
     Ok(ratio)
 }
 

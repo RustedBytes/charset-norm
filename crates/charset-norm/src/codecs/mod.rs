@@ -30,7 +30,7 @@ use crate::tables::{SINGLE_BYTE_CODECS, iana_lookup};
 
 use cjk::{CJK_NAMES, cjk, decode_cjk};
 use iso2022::{decode_hz, decode_iso2022};
-use single_byte::{decode_ascii, decode_single_byte, single_byte_chars};
+use single_byte::{decode_ascii, decode_single_byte, single_byte_table};
 use utf::{decode_utf7, decode_utf8, decode_utf16, decode_utf32};
 
 /// How decoding handles invalid input.
@@ -160,6 +160,24 @@ pub fn is_known(encoding: &str) -> bool {
     lookup(encoding).is_some()
 }
 
+/// Canonical name of a single-byte code page (`ascii`, `latin_1` or a table),
+/// resolving aliases; `None` for other codecs.
+pub(crate) fn single_byte_name(encoding: &str) -> Option<&'static str> {
+    match lookup(encoding)? {
+        Codec::Ascii => Some("ascii"),
+        Codec::Latin1 => Some("latin_1"),
+        Codec::SingleByte(index) => Some(SINGLE_BYTE_CODECS[index].0),
+        _ => None,
+    }
+}
+
+/// Canonical names of every single-byte code page with a native codec.
+pub(crate) fn single_byte_names() -> impl Iterator<Item = &'static str> {
+    ["ascii", "latin_1"]
+        .into_iter()
+        .chain(SINGLE_BYTE_CODECS.iter().map(|(name, _)| *name))
+}
+
 /// Decode `data` with `encoding`, exactly as `CPython`'s `bytes.decode` would.
 ///
 /// # Errors
@@ -167,25 +185,46 @@ pub fn is_known(encoding: &str) -> bool {
 /// [`DecodeError::Invalid`] when `data` is not valid for the encoding (strict
 /// mode), [`DecodeError::Unknown`] when the encoding has no native codec.
 pub fn decode(data: &[u8], encoding: &str, errors: Errors) -> Result<String, DecodeError> {
+    let mut out = String::new();
+    decode_into(data, encoding, errors, &mut out)?;
+    Ok(out)
+}
+
+/// [`decode`] into a reusable buffer: `out` is cleared first, and its
+/// contents are unspecified when an error is returned.
+///
+/// # Errors
+///
+/// As for [`decode`].
+pub fn decode_into(
+    data: &[u8],
+    encoding: &str,
+    errors: Errors,
+    out: &mut String,
+) -> Result<(), DecodeError> {
     let codec = lookup(encoding).ok_or(DecodeError::Unknown)?;
+    out.clear();
     match codec {
-        Codec::Ascii => decode_ascii(data, errors),
-        Codec::Latin1 => Ok(data.iter().map(|&byte| byte as char).collect()),
-        Codec::SingleByte(index) => decode_single_byte(data, index, errors),
+        Codec::Ascii => decode_ascii(data, errors, out),
+        Codec::Latin1 => {
+            out.extend(data.iter().map(|&byte| char::from(byte)));
+            Ok(())
+        }
+        Codec::SingleByte(index) => decode_single_byte(data, index, errors, out),
         Codec::Utf8 { sig } => {
             let data = if sig {
                 data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data)
             } else {
                 data
             };
-            decode_utf8(data, errors)
+            decode_utf8(data, errors, out)
         }
-        Codec::Utf16(endian) => decode_utf16(data, endian, errors),
-        Codec::Utf32(endian) => decode_utf32(data, endian, errors),
-        Codec::Utf7 => decode_utf7(data, errors),
-        Codec::Cjk(name) => decode_cjk(cjk().codec(name), data, errors),
-        Codec::Iso2022(variant) => decode_iso2022(variant, data, errors),
-        Codec::Hz => decode_hz(data, errors),
+        Codec::Utf16(endian) => decode_utf16(data, endian, errors, out),
+        Codec::Utf32(endian) => decode_utf32(data, endian, errors, out),
+        Codec::Utf7 => decode_utf7(data, errors, out),
+        Codec::Cjk(name) => decode_cjk(cjk().codec(name), data, errors, out),
+        Codec::Iso2022(variant) => decode_iso2022(variant, data, errors, out),
+        Codec::Hz => decode_hz(data, errors, out),
     }
 }
 
@@ -199,10 +238,7 @@ pub fn is_valid(data: &[u8], encoding: &str) -> Result<bool, DecodeError> {
     match lookup(encoding).ok_or(DecodeError::Unknown)? {
         Codec::Ascii => Ok(data.is_ascii()),
         Codec::Latin1 => Ok(true),
-        Codec::SingleByte(index) => {
-            let chars = single_byte_chars(index);
-            Ok(data.iter().all(|&byte| chars[byte as usize].is_some()))
-        }
+        Codec::SingleByte(index) => Ok(single_byte_table(index).is_valid(data)),
         Codec::Utf8 { .. } => Ok(std::str::from_utf8(data).is_ok()),
         _ => match decode(data, encoding, Errors::Strict) {
             Ok(_) => Ok(true),
@@ -219,7 +255,7 @@ pub fn single_byte_decoder(encoding: &str) -> Option<impl Fn(u8) -> Option<char>
     let codec = lookup(encoding)?;
     let chars = match codec {
         Codec::Ascii | Codec::Latin1 => None,
-        Codec::SingleByte(index) => Some(single_byte_chars(index)),
+        Codec::SingleByte(index) => Some(&single_byte_table(index).chars),
         _ => return None,
     };
     let ascii = matches!(codec, Codec::Ascii);

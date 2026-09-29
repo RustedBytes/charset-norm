@@ -1,5 +1,9 @@
 //! Float helpers reproducing `CPython`'s results bit for bit.
 
+use std::fmt;
+
+use crate::stackfmt::StackStr;
+
 /// `round(value, digits)` with `CPython`'s correctly-rounded semantics.
 pub(crate) fn round(value: f64, digits: usize) -> f64 {
     const POWERS: [f64; 9] = [1.0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8];
@@ -17,26 +21,50 @@ pub(crate) fn round(value: f64, digits: usize) -> f64 {
             return scaled.round() / scale;
         }
     }
-    format!("{value:.digits$}").parse().unwrap_or(value)
+    // Correctly rounded decimal text, parsed back: CPython's own method.
+    let mut text = StackStr::<352>::new();
+    match fmt::write(&mut text, format_args!("{value:.digits$}")) {
+        Ok(()) => text.as_str().parse().unwrap_or(value),
+        Err(_) => format!("{value:.digits$}").parse().unwrap_or(value),
+    }
 }
 
-/// `sum()` over floats as `CPython` 3.12+ computes it (Neumaier compensation).
-pub(crate) fn sum(values: &[f64]) -> f64 {
-    let mut total = 0.0f64;
-    let mut compensation = 0.0f64;
-    for &value in values {
-        let next = total + value;
-        if total.abs() >= value.abs() {
-            compensation += (total - next) + value;
+/// Running `sum()` over floats as `CPython` 3.12+ computes it (Neumaier
+/// compensation), fed one value at a time.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Sum {
+    total: f64,
+    compensation: f64,
+}
+
+impl Sum {
+    pub(crate) fn add(&mut self, value: f64) {
+        let next = self.total + value;
+        if self.total.abs() >= value.abs() {
+            self.compensation += (self.total - next) + value;
         } else {
-            compensation += (value - next) + total;
+            self.compensation += (value - next) + self.total;
         }
-        total = next;
+        self.total = next;
     }
-    if compensation != 0.0 && compensation.is_finite() {
-        total += compensation;
+
+    pub(crate) fn value(self) -> f64 {
+        if self.compensation != 0.0 && self.compensation.is_finite() {
+            self.total + self.compensation
+        } else {
+            self.total
+        }
     }
-    total
+}
+
+/// `sum()` over floats as `CPython` 3.12+ computes it.
+#[cfg(test)]
+pub(crate) fn sum(values: &[f64]) -> f64 {
+    let mut total = Sum::default();
+    for &value in values {
+        total.add(value);
+    }
+    total.value()
 }
 
 #[cfg(test)]

@@ -3,8 +3,6 @@
 //! This is a low-level building block of [`crate::from_bytes`]; most users
 //! do not need it.
 
-use std::borrow::Cow;
-
 use crate::codecs::{self, DecodeError, Errors};
 
 /// How the payload's signature (BOM) is treated when cutting chunks.
@@ -75,8 +73,17 @@ impl<'a> ChunkSource<'a> {
     }
 }
 
-fn char_slice(value: &str, start: usize, count: usize) -> String {
-    value.chars().skip(start).take(count).collect()
+/// First `count` characters of `value` from character `start`, into `out`.
+fn char_slice_into(value: &str, start: usize, count: usize, out: &mut String) {
+    out.clear();
+    out.extend(value.chars().skip(start).take(count));
+}
+
+/// The first `count` characters of `text`, borrowed.
+fn head(text: &str, count: usize) -> &str {
+    text.char_indices()
+        .nth(count)
+        .map_or(text, |(offset, _)| &text[..offset])
 }
 
 /// `prefix in decoded`, probing first around where a chunk starting at byte
@@ -99,25 +106,27 @@ fn contains_near(decoded: &str, prefix: &str, offset: usize, payload_len: usize)
 
 /// Chunk sampler for one candidate encoding. Chunks are produced lazily so
 /// the detector can stop decoding as soon as it has seen enough of them.
-pub struct ChunkCutter<'a> {
+pub struct ChunkCutter<'a, I = std::vec::IntoIter<usize>> {
     sequences: &'a [u8],
     encoding: &'a str,
-    offsets: std::vec::IntoIter<usize>,
+    offsets: I,
     chunk_size: usize,
     signature: Signature<'a>,
     source: ChunkSource<'a>,
     decoded_len: Option<usize>,
+    /// Scratch for chunks prefixed with a kept signature.
+    prefixed: Vec<u8>,
     done: bool,
 }
 
-impl<'a> ChunkCutter<'a> {
+impl<'a, I: Iterator<Item = usize> + Clone> ChunkCutter<'a, I> {
     /// Sample chunks of `chunk_size` from `sequences`, decoded as
     /// `encoding`, starting at each of `offsets`.
     #[must_use]
     pub fn new(
         sequences: &'a [u8],
         encoding: &'a str,
-        offsets: Vec<usize>,
+        offsets: impl IntoIterator<IntoIter = I>,
         chunk_size: usize,
         signature: Signature<'a>,
         source: ChunkSource<'a>,
@@ -130,6 +139,7 @@ impl<'a> ChunkCutter<'a> {
             signature,
             source,
             decoded_len: None,
+            prefixed: Vec::new(),
             done: false,
         }
     }
@@ -147,16 +157,36 @@ impl<'a> ChunkCutter<'a> {
         &base[offset.min(base.len())..(offset + self.chunk_size).min(base.len())]
     }
 
-    /// `sequences[start:end]`, with the signature prepended when it is kept.
-    fn cut(&self, start: usize, end: usize) -> Cow<'a, [u8]> {
+    /// Decode `sequences[start:end]` (prefixed with a kept signature).
+    fn decode_cut(
+        &mut self,
+        start: usize,
+        end: usize,
+        errors: Errors,
+        out: &mut String,
+    ) -> Result<(), DecodeError> {
+        let cut = &self.sequences[start.min(end)..end];
+        if let Signature::Kept(signature) = self.signature {
+            self.prefixed.clear();
+            self.prefixed.extend_from_slice(signature);
+            self.prefixed.extend_from_slice(cut);
+            codecs::decode_into(&self.prefixed, self.encoding, errors, out)
+        } else {
+            codecs::decode_into(cut, self.encoding, errors, out)
+        }
+    }
+
+    /// Whether `sequences[start:end]` (with a kept signature) decodes strictly.
+    fn valid_cut(&self, start: usize, end: usize) -> Result<bool, DecodeError> {
         let cut = &self.sequences[start.min(end)..end];
         match self.signature {
             Signature::Kept(signature) => {
-                let mut prefixed = signature.to_vec();
+                let mut prefixed = Vec::with_capacity(signature.len() + cut.len());
+                prefixed.extend_from_slice(signature);
                 prefixed.extend_from_slice(cut);
-                Cow::Owned(prefixed)
+                codecs::is_valid(&prefixed, self.encoding)
             }
-            _ => Cow::Borrowed(cut),
+            _ => codecs::is_valid(cut, self.encoding),
         }
     }
 
@@ -175,14 +205,13 @@ impl<'a> ChunkCutter<'a> {
     /// [`DecodeError::Invalid`] when a chunk does not decode, or
     /// [`DecodeError::Unknown`] for an unsupported encoding.
     pub fn validate(&self) -> Result<(), DecodeError> {
-        let offsets = self.offsets.as_slice();
         match self.source {
             // Decoded text and lenient decoding cannot fail.
             ChunkSource::ScaledText(_)
             | ChunkSource::Text(_)
             | ChunkSource::Bytes { lenient: true, .. } => {}
             ChunkSource::Deferred => {
-                for &offset in offsets {
+                for offset in self.offsets.clone() {
                     let cut = self.deferred_cut(offset);
                     if cut.is_empty() {
                         break;
@@ -193,9 +222,9 @@ impl<'a> ChunkCutter<'a> {
                 }
             }
             ChunkSource::Bytes { lenient: false, .. } => {
-                for &offset in offsets {
+                for offset in self.offsets.clone() {
                     if let Some(end) = self.chunk_end(offset)
-                        && !codecs::is_valid(&self.cut(offset, end), self.encoding)?
+                        && !self.valid_cut(offset, end)?
                     {
                         return Err(DecodeError::Invalid);
                     }
@@ -205,27 +234,41 @@ impl<'a> ChunkCutter<'a> {
         Ok(())
     }
 
-    fn next_chunk(&mut self) -> Option<Result<String, DecodeError>> {
+    /// Decode the next chunk into `out` (replacing its contents).
+    /// `None` once every chunk has been produced.
+    pub fn next_into(&mut self, out: &mut String) -> Option<Result<(), DecodeError>> {
+        if self.done {
+            return None;
+        }
+        let item = self.next_chunk(out);
+        if item.is_none() {
+            self.done = true;
+        }
+        item
+    }
+
+    fn next_chunk(&mut self, out: &mut String) -> Option<Result<(), DecodeError>> {
         loop {
             let offset = self.offsets.next()?;
             let (lenient, decoded) = match self.source {
                 ChunkSource::ScaledText(text) => {
                     let decoded_len = *self.decoded_len.get_or_insert_with(|| text.chars().count());
-                    let chunk = char_slice(
+                    char_slice_into(
                         text,
                         offset * decoded_len / self.sequences.len(),
                         self.chunk_size,
+                        out,
                     );
-                    return (!chunk.is_empty()).then_some(Ok(chunk));
+                    return (!out.is_empty()).then_some(Ok(()));
                 }
                 ChunkSource::Text(text) => {
-                    let chunk = char_slice(text, offset, self.chunk_size);
-                    return (!chunk.is_empty()).then_some(Ok(chunk));
+                    char_slice_into(text, offset, self.chunk_size, out);
+                    return (!out.is_empty()).then_some(Ok(()));
                 }
                 ChunkSource::Deferred => {
                     let cut = self.deferred_cut(offset);
                     return (!cut.is_empty())
-                        .then(|| codecs::decode(cut, self.encoding, Errors::Strict));
+                        .then(|| codecs::decode_into(cut, self.encoding, Errors::Strict, out));
                 }
                 ChunkSource::Bytes { lenient, decoded } => (lenient, decoded),
             };
@@ -237,12 +280,12 @@ impl<'a> ChunkCutter<'a> {
             } else {
                 Errors::Strict
             };
-            let chunk = codecs::decode(&self.cut(offset, end), self.encoding, errors);
-            return Some(match (chunk, decoded) {
-                (Ok(chunk), Some(decoded)) if lenient && offset > 0 => {
-                    self.realign(chunk, decoded, offset, end)
+            let result = self.decode_cut(offset, end, errors, out);
+            return Some(match (result, decoded) {
+                (Ok(()), Some(decoded)) if lenient && offset > 0 => {
+                    self.realign(out, decoded, offset, end)
                 }
-                (chunk, _) => chunk,
+                (result, _) => result,
             });
         }
     }
@@ -251,16 +294,20 @@ impl<'a> ChunkCutter<'a> {
     /// bytes, wrapping like a negative Python index) until its beginning
     /// appears in the full text.
     fn realign(
-        &self,
-        mut chunk: String,
+        &mut self,
+        chunk: &mut String,
         decoded: &str,
         offset: usize,
         end: usize,
-    ) -> Result<String, DecodeError> {
-        let head =
-            |chunk: &str| -> String { chunk.chars().take(self.chunk_size.min(16)).collect() };
-        if contains_near(decoded, &head(&chunk), offset, self.sequences.len()) {
-            return Ok(chunk);
+    ) -> Result<(), DecodeError> {
+        let prefix_chars = self.chunk_size.min(16);
+        if contains_near(
+            decoded,
+            head(chunk, prefix_chars),
+            offset,
+            self.sequences.len(),
+        ) {
+            return Ok(());
         }
         for delta in 0..4usize {
             let start = if delta <= offset {
@@ -268,27 +315,22 @@ impl<'a> ChunkCutter<'a> {
             } else {
                 self.sequences.len().saturating_sub(delta - offset)
             };
-            chunk = codecs::decode(&self.cut(start, end), self.encoding, Errors::Ignore)?;
-            if decoded.contains(&head(&chunk)) {
+            self.decode_cut(start, end, Errors::Ignore, chunk)?;
+            if decoded.contains(head(chunk, prefix_chars)) {
                 break;
             }
         }
-        Ok(chunk)
+        Ok(())
     }
 }
 
-impl Iterator for ChunkCutter<'_> {
+impl<I: Iterator<Item = usize> + Clone> Iterator for ChunkCutter<'_, I> {
     type Item = Result<String, DecodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        let item = self.next_chunk();
-        if item.is_none() {
-            self.done = true;
-        }
-        item
+        let mut chunk = String::new();
+        self.next_into(&mut chunk)
+            .map(|result| result.map(|()| chunk))
     }
 }
 

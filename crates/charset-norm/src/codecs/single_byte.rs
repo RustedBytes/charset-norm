@@ -5,19 +5,24 @@ use std::sync::OnceLock;
 use super::{DecodeError, Errors};
 use crate::tables::SINGLE_BYTE_CODECS;
 
-pub(super) fn decode_ascii(data: &[u8], errors: Errors) -> Result<String, DecodeError> {
+pub(super) fn decode_ascii(
+    data: &[u8],
+    errors: Errors,
+    out: &mut String,
+) -> Result<(), DecodeError> {
     if data.is_ascii() {
-        // SAFETY-free: ASCII is valid UTF-8.
-        return Ok(String::from_utf8(data.to_vec()).unwrap_or_default());
+        push_ascii(out, data);
+        return Ok(());
     }
-    match errors {
-        Errors::Strict => Err(DecodeError::Invalid),
-        Errors::Ignore => Ok(data
-            .iter()
+    if errors == Errors::Strict {
+        return Err(DecodeError::Invalid);
+    }
+    out.extend(
+        data.iter()
             .filter(|byte| byte.is_ascii())
-            .map(|&byte| byte as char)
-            .collect()),
-    }
+            .map(|&byte| char::from(byte)),
+    );
+    Ok(())
 }
 
 /// Length of the leading run of ASCII bytes, scanned a word at a time.
@@ -40,9 +45,46 @@ pub(super) fn ascii_prefix(data: &[u8]) -> usize {
             .unwrap_or(data.len() - length)
 }
 
-/// Single-byte code pages as `char` tables (`None` for undefined bytes).
-pub(super) fn single_byte_chars(index: usize) -> &'static [Option<char>; 256] {
-    static TABLES: OnceLock<Vec<[Option<char>; 256]>> = OnceLock::new();
+/// Number of leading bytes of `data` in whole 8-byte words of ASCII.
+#[inline]
+fn ascii_words(data: &[u8]) -> usize {
+    data.as_chunks::<8>()
+        .0
+        .iter()
+        .take_while(|chunk| u64::from_ne_bytes(**chunk) & 0x8080_8080_8080_8080 == 0)
+        .count()
+        * 8
+}
+
+/// A single-byte code page as a `char` table (`None` for undefined bytes).
+pub(super) struct SingleByteTable {
+    pub(super) chars: [Option<char>; 256],
+    /// Bytes below 0x80 decode to themselves.
+    ascii_identity: bool,
+}
+
+impl SingleByteTable {
+    /// Whether every byte of `data` is defined.
+    pub(super) fn is_valid(&self, data: &[u8]) -> bool {
+        let defined = |bytes: &[u8]| {
+            bytes
+                .iter()
+                .all(|&byte| self.chars[usize::from(byte)].is_some())
+        };
+        if !self.ascii_identity {
+            return defined(data);
+        }
+        let (words, tail) = data.as_chunks::<8>();
+        words
+            .iter()
+            .all(|word| u64::from_ne_bytes(*word) & 0x8080_8080_8080_8080 == 0 || defined(word))
+            && defined(tail)
+    }
+}
+
+/// Single-byte code pages, by index into `SINGLE_BYTE_CODECS`.
+pub(super) fn single_byte_table(index: usize) -> &'static SingleByteTable {
+    static TABLES: OnceLock<Vec<SingleByteTable>> = OnceLock::new();
     let tables = TABLES.get_or_init(|| {
         SINGLE_BYTE_CODECS
             .iter()
@@ -53,7 +95,12 @@ pub(super) fn single_byte_chars(index: usize) -> &'static [Option<char>; 256] {
                         *slot = char::from_u32(u32::from(value));
                     }
                 }
-                chars
+                let ascii_identity =
+                    (0u8..0x80).all(|byte| chars[usize::from(byte)] == Some(char::from(byte)));
+                SingleByteTable {
+                    chars,
+                    ascii_identity,
+                }
             })
             .collect()
     });
@@ -70,15 +117,27 @@ pub(super) fn decode_single_byte(
     data: &[u8],
     index: usize,
     errors: Errors,
-) -> Result<String, DecodeError> {
-    let chars = single_byte_chars(index);
-    let mut out = String::with_capacity(data.len() * 2);
-    for &byte in data {
-        match chars[byte as usize] {
+    out: &mut String,
+) -> Result<(), DecodeError> {
+    let table = single_byte_table(index);
+    out.reserve(data.len() * 2);
+    let mut position = 0;
+    while let Some(&byte) = data.get(position) {
+        // Copy runs of whole ASCII words at once; short runs stay per byte.
+        if byte < 0x80 && table.ascii_identity {
+            let run = ascii_words(&data[position..]);
+            if run > 0 {
+                push_ascii(out, &data[position..position + run]);
+                position += run;
+                continue;
+            }
+        }
+        position += 1;
+        match table.chars[usize::from(byte)] {
             Some(character) => out.push(character),
             None if errors == Errors::Strict => return Err(DecodeError::Invalid),
             None => {}
         }
     }
-    Ok(out)
+    Ok(())
 }
