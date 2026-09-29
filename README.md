@@ -16,7 +16,7 @@ charset_normalizer API.
 
 ## Installation
 
-Requires Python 3.8+ and, when building from source, Rust 1.83+.
+Requires Python 3.8+ and, when building from source, Rust 1.98+.
 
 ```sh
 pip install git+https://github.com/RustedBytes/charset-norm.git

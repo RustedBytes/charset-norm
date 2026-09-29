@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::codecs::{self, DecodeError, Errors};
 use crate::encoding::{self, encoding_indication};
-use crate::{pyfloat, unicode, Error, TOO_BIG_SEQUENCE};
+use crate::{Error, TOO_BIG_SEQUENCE, pyfloat, unicode};
 
 /// One plausible encoding for a payload.
 #[derive(Clone, Debug)]
@@ -54,7 +54,7 @@ impl CharsetMatch {
         }
     }
 
-    /// Canonical (CPython) name of the encoding, e.g. `"cp1252"`.
+    /// Canonical (`CPython`) name of the encoding, e.g. `"cp1252"`.
     pub fn encoding(&self) -> &str {
         &self.encoding
     }
@@ -130,6 +130,11 @@ impl CharsetMatch {
     }
 
     /// The payload decoded with [`encoding`](Self::encoding).
+    ///
+    /// # Errors
+    ///
+    /// [`DecodeError::Invalid`] when the payload is not valid for the encoding,
+    /// [`DecodeError::Unknown`] when the encoding has no native codec.
     pub fn decoded(&self) -> Result<&str, DecodeError> {
         if let Some(text) = self.decoded.get() {
             return Ok(text);
@@ -155,6 +160,10 @@ impl CharsetMatch {
     }
 
     /// Stable 64-bit hash of the decoded text.
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when the payload cannot be decoded.
     pub fn fingerprint(&self) -> Result<u64, DecodeError> {
         if let Some(value) = self.fingerprint.get() {
             return Ok(*value);
@@ -165,21 +174,28 @@ impl CharsetMatch {
     }
 
     /// Share of the payload's bytes spent on multi-byte sequences.
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when the payload cannot be decoded.
     pub fn multi_byte_usage(&self) -> Result<f64, DecodeError> {
         if self.payload.is_empty() {
             return Ok(0.0);
         }
-        let count = match self.char_count.get() {
-            Some(count) => *count,
-            None => {
-                let text = self.decoded()?;
-                *self.char_count.get_or_init(|| text.chars().count())
-            }
+        let count = if let Some(count) = self.char_count.get() {
+            *count
+        } else {
+            let text = self.decoded()?;
+            *self.char_count.get_or_init(|| text.chars().count())
         };
         Ok(1.0 - count as f64 / self.payload.len() as f64)
     }
 
     /// Unicode ranges present in the decoded text, sorted by name.
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when the payload cannot be decoded.
     pub fn alphabets(&self) -> Result<&[&'static str], DecodeError> {
         if let Some(ranges) = self.alphabets.get() {
             return Ok(ranges);
@@ -223,12 +239,20 @@ impl CharsetMatch {
     }
 
     /// Whether `other` has the same encoding and decoded text.
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when either payload cannot be decoded.
     pub fn same_as(&self, other: &CharsetMatch) -> Result<bool, DecodeError> {
         Ok(self.encoding == other.encoding && self.fingerprint()? == other.fingerprint()?)
     }
 
     /// Attach `other` as a submatch. Returns `false` (and drops it) when it
     /// is the same match as `self`.
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when either payload cannot be decoded.
     pub fn add_submatch(&mut self, mut other: CharsetMatch) -> Result<bool, DecodeError> {
         if self.same_as(&other)? {
             return Ok(false);
@@ -240,6 +264,14 @@ impl CharsetMatch {
 
     /// Whether this match, if added to a result list holding `existing`,
     /// would be folded into it as a submatch (same text, same chaos).
+    ///
+    /// # Errors
+    ///
+    /// A [`DecodeError`] when either payload cannot be decoded.
+    #[expect(
+        clippy::float_cmp,
+        reason = "only identical chaos values denote the same result"
+    )]
     pub fn is_duplicate_of(&self, existing: &CharsetMatch) -> Result<bool, DecodeError> {
         if self.payload.len() >= TOO_BIG_SEQUENCE || existing.chaos != self.chaos {
             return Ok(false);
@@ -267,6 +299,11 @@ impl CharsetMatch {
 
     /// Decoded text with any in-document encoding declaration rewritten to
     /// `encoding`, ready to be re-encoded.
+    ///
+    /// # Errors
+    ///
+    /// [`OutputError`] when the payload does not decode or, if a declaration
+    /// must be rewritten, the target encoding is unknown.
     pub fn output_text(&self, encoding: &str) -> Result<String, OutputError> {
         let mut decoded = self.decoded().map_err(OutputError::Decode)?.to_owned();
         let declared_non_utf8 = self.preemptive_declaration.as_ref().is_some_and(|value| {
@@ -304,6 +341,11 @@ impl CharsetMatch {
     /// let best = results.best().unwrap();
     /// assert_eq!(best.output("utf_8").unwrap(), "Ça va très bien".as_bytes());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`OutputError`] when the payload does not decode, the target encoding is
+    /// unknown, or it has no native encoder.
     pub fn output(&self, encoding: &str) -> Result<Vec<u8>, OutputError> {
         let text = self.output_text(encoding)?;
         codecs::encode(&text, encoding).ok_or_else(|| OutputError::Unsupported(encoding.to_owned()))
@@ -334,7 +376,7 @@ impl std::fmt::Display for OutputError {
 
 impl std::error::Error for OutputError {}
 
-/// Sort `items` by a "ranks before" predicate, reproducing CPython's
+/// Sort `items` by a "ranks before" predicate, reproducing `CPython`'s
 /// `list.sort()` order for fewer than 64 items (the order is observable
 /// because the predicate is not transitive). Larger inputs use a stable
 /// binary insertion sort.
@@ -407,26 +449,31 @@ impl CharsetMatches {
     }
 
     /// The most probable match.
+    #[must_use]
     pub fn best(&self) -> Option<&CharsetMatch> {
         self.results.first()
     }
 
     /// Number of distinct matches (submatches excluded).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.results.len()
     }
 
     /// Whether no encoding fits the payload (it is likely binary).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.results.is_empty()
     }
 
     /// Match at `index` in rank order.
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&CharsetMatch> {
         self.results.get(index)
     }
 
     /// The match that could come from `encoding` (any alias), if any.
+    #[must_use]
     pub fn get_by_encoding(&self, encoding: &str) -> Option<&CharsetMatch> {
         let name = encoding::iana_name(encoding, false).ok()?;
         self.results
@@ -440,6 +487,7 @@ impl CharsetMatches {
     }
 
     /// Matches in rank order, as a vector.
+    #[must_use]
     pub fn into_vec(self) -> Vec<CharsetMatch> {
         self.results
     }

@@ -16,19 +16,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust MSRV
-        run: rustup toolchain install 1.83.0 --profile minimal --component rustfmt,clippy
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
       - name: Check formatting
-        run: cargo +1.83.0 fmt --check
+        run: cargo +1.98.1 fmt --check
       - name: Lint crates
-        run: cargo +1.83.0 clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo +1.98.1 clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test crates
-        run: cargo +1.83.0 test --workspace --all-features
+        run: cargo +1.98.1 test --workspace --all-features
       - name: Build documentation
-        run: cargo +1.83.0 doc -p charset-norm --all-features --no-deps
+        run: cargo +1.98.1 doc -p charset-norm --all-features --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
       - name: Check the charset-norm crate can be published
-        run: cargo +1.83.0 publish -p charset-norm --dry-run
+        run: cargo +1.98.1 publish -p charset-norm --dry-run
 
   lint:
     name: 🎨 Linters

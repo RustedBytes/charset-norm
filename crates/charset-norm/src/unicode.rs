@@ -5,10 +5,10 @@
 //! are memoized per code point in a lock-free table, so hot loops pay for
 //! a name lookup at most once per character for the process lifetime.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use unicode_general_category::{get_general_category, GeneralCategory};
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::tables::{
     ACCENT_KEYWORDS, BASIC_LATIN_COMPATIBLE_RANGE_FAMILIES, COMMON_CJK_CHARACTERS,
@@ -44,8 +44,16 @@ pub const SUPERSCRIPT: u16 = 1 << 11;
 pub const SENTENCE_OPEN_PUNCTUATION: u16 = 1 << 12;
 
 /// Two-letter general category, as `unicodedata.category` reports it.
+#[must_use]
 pub fn category(character: char) -> &'static str {
-    use GeneralCategory::*;
+    use GeneralCategory::{
+        ClosePunctuation, ConnectorPunctuation, Control, CurrencySymbol, DashPunctuation,
+        DecimalNumber, EnclosingMark, FinalPunctuation, Format, InitialPunctuation, LetterNumber,
+        LineSeparator, LowercaseLetter, MathSymbol, ModifierLetter, ModifierSymbol, NonspacingMark,
+        OpenPunctuation, OtherLetter, OtherNumber, OtherPunctuation, OtherSymbol,
+        ParagraphSeparator, PrivateUse, SpaceSeparator, SpacingMark, Surrogate, TitlecaseLetter,
+        UppercaseLetter,
+    };
     match get_general_category(character) {
         UppercaseLetter => "Lu",
         LowercaseLetter => "Ll",
@@ -76,17 +84,19 @@ pub fn category(character: char) -> &'static str {
         Format => "Cf",
         Surrogate => "Cs",
         PrivateUse => "Co",
-        Unassigned => "Cn",
+        // `Unassigned`, and categories added by future Unicode versions.
         _ => "Cn",
     }
 }
 
 /// `str.isspace()`: bidirectional class WS/B/S or category Zs.
+#[must_use]
 pub fn is_space(character: char) -> bool {
     character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
 }
 
-/// `str.isdigit()`: Numeric_Type Decimal or Digit.
+/// `str.isdigit()`: `Numeric_Type` Decimal or Digit.
+#[must_use]
 pub fn is_digit(character: char) -> bool {
     category(character) == "Nd"
         || NON_DECIMAL_DIGITS
@@ -147,6 +157,7 @@ fn flags_from_name(character: char) -> u16 {
 
 /// First code point of the one-step canonical decomposition, like
 /// `chr(int(unicodedata.decomposition(c).split()[0], 16))`.
+#[must_use]
 pub fn remove_accent(character: char) -> char {
     let mut parts = Vec::with_capacity(4);
     unicode_normalization::char::decompose_canonical(character, |part| parts.push(part));
@@ -161,10 +172,10 @@ pub fn remove_accent(character: char) -> char {
         .try_fold(parts[0], |base, &mark| {
             unicode_normalization::char::compose(base, mark)
         });
-    if let Some(head) = head {
-        if unicode_normalization::char::compose(head, last) == Some(character) {
-            return head;
-        }
+    if let Some(head) = head
+        && unicode_normalization::char::compose(head, last) == Some(character)
+    {
+        return head;
     }
     // Singleton or composition-excluded mapping.
     let mut composed = parts[0];
@@ -177,6 +188,10 @@ pub fn remove_accent(character: char) -> char {
     composed
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent properties of a Unicode block"
+)]
 pub(crate) struct RangeInfo {
     pub(crate) name: &'static str,
     pub(crate) family: &'static str,
@@ -212,7 +227,7 @@ fn range_index_uncached(codepoint: u32) -> u16 {
     }
     let (start, stop, ..) = UNICODE_RANGES[index - 1];
     if start <= codepoint && codepoint < stop {
-        (index - 1) as u16
+        u16::try_from(index - 1).unwrap_or(NO_RANGE)
     } else {
         NO_RANGE
     }
@@ -224,6 +239,7 @@ pub(crate) fn range_of(character: char) -> Option<&'static RangeInfo> {
 }
 
 /// Name of the Unicode block holding `character`.
+#[must_use]
 pub fn unicode_range(character: char) -> Option<&'static str> {
     range_of(character).map(|range| range.name)
 }
@@ -285,6 +301,10 @@ pub(crate) fn suspicious_range_indices(a: u16, b: u16) -> bool {
 
 /// Memoized per-character properties.
 #[derive(Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "unpacked view of independent character properties"
+)]
 pub(crate) struct Props {
     pub(crate) category: &'static str,
     pub(crate) upper: bool,
@@ -357,12 +377,12 @@ fn pack(props: &Props) -> u64 {
         .unwrap_or(29) as u64;
     COMPUTED
         | category
-        | (props.upper as u64) << 5
-        | (props.lower as u64) << 6
-        | (props.space as u64) << 7
-        | (props.digit as u64) << 8
-        | (props.flags as u64) << 9
-        | (props.range as u64) << 22
+        | u64::from(props.upper) << 5
+        | u64::from(props.lower) << 6
+        | u64::from(props.space) << 7
+        | u64::from(props.digit) << 8
+        | u64::from(props.flags) << 9
+        | u64::from(props.range) << 22
         | (props.unaccented as u64) << 32
 }
 
@@ -395,6 +415,7 @@ pub(crate) fn props(character: char) -> Props {
 
 /// Script and shape flags of a character (see the flag constants), derived
 /// from its Unicode name.
+#[must_use]
 pub fn character_flags(character: char) -> u16 {
     props(character).flags
 }
@@ -408,12 +429,14 @@ pub(crate) fn is_common_cjk(character: char) -> bool {
 }
 
 /// Punctuation category, or a character from a punctuation block.
+#[must_use]
 pub fn is_punctuation(character: char) -> bool {
     let props = props(character);
     props.category.starts_with('P') || props.range().is_some_and(|range| range.punctuation)
 }
 
 /// Symbol or number, or a presentation form that is not a letter.
+#[must_use]
 pub fn is_symbol(character: char) -> bool {
     let props = props(character);
     props.category.starts_with('S')
@@ -422,11 +445,13 @@ pub fn is_symbol(character: char) -> bool {
 }
 
 /// Character from an emoticon or pictograph block.
+#[must_use]
 pub fn is_emoticon(character: char) -> bool {
     range_of(character).is_some_and(|range| range.emoticon)
 }
 
 /// Whitespace, separator or word-breaking punctuation.
+#[must_use]
 pub fn is_separator(character: char) -> bool {
     let props = props(character);
     props.space
@@ -436,12 +461,14 @@ pub fn is_separator(character: char) -> bool {
 }
 
 /// Letter with distinct upper and lower case forms, in one of them.
+#[must_use]
 pub fn is_case_variable(character: char) -> bool {
     let props = props(character);
     props.lower != props.upper
 }
 
 /// Invisible control or format character (other than whitespace).
+#[must_use]
 pub fn is_unprintable(character: char) -> bool {
     let props = props(character);
     !props.space && !props.printable(character) && character != '\u{1a}' && character != '\u{feff}'
@@ -449,6 +476,11 @@ pub fn is_unprintable(character: char) -> bool {
 
 /// Whether two Unicode blocks (by name, as returned by [`unicode_range`]) are
 /// unlikely to follow each other in real text. `None` counts as suspicious.
+///
+/// # Errors
+///
+/// [`Error::UnknownRange`](crate::Error::UnknownRange) when a name is not a
+/// known Unicode block.
 pub fn is_suspiciously_successive_range(
     range_a: Option<&str>,
     range_b: Option<&str>,

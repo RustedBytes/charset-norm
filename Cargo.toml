@@ -1,11 +1,11 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/charset-norm", "crates/charset-norm-python"]
 
 [workspace.package]
 version = "3.5.1"
-edition = "2021"
-rust-version = "1.83"
+edition = "2024"
+rust-version = "1.98"
 license = "MIT"
 authors = ["Yehor Smoliakov <egorsmkv@gmail.com>"]
 homepage = "https://github.com/RustedBytes/charset-norm"
@@ -13,6 +13,12 @@ repository = "https://github.com/RustedBytes/charset-norm"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Counts and lengths converted to f64 for ratios stay far below 2^52, where
+# the conversion is exact.
+cast_precision_loss = "allow"
 
 # Wheels are built with this profile: whole-program optimisation in a single
 # codegen unit. Unwinding stays enabled so PyO3 can turn panics into exceptions.

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- Rust crates use edition 2024 and require Rust 1.98; clippy's pedantic lints
+  are enabled workspace-wide and enforced in CI.
 - Split the Rust code into a Cargo workspace: the ``charset-norm`` library crate
   (pure Rust, publishable to crates.io, with a ``Logger`` trait and an optional
   ``log`` feature) and the ``charset-norm-python`` PyO3 bindings.

@@ -5,18 +5,19 @@ use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 
+use crate::Error;
 use crate::codecs;
 use crate::tables::{self, ENCODING_ALIASES, IANA_SUPPORTED_MB_FIRST, KO_NAMES, ZH_NAMES};
 use crate::unicode;
-use crate::Error;
 
 /// Every code page the detector tries, multi-byte ones first (the order used
 /// during detection).
+#[must_use]
 pub fn supported_encodings() -> &'static [&'static str] {
     IANA_SUPPORTED_MB_FIRST
 }
 
-/// Resolve a code page name or alias to its canonical (CPython) name.
+/// Resolve a code page name or alias to its canonical (`CPython`) name.
 ///
 /// With `strict`, unknown names are an error; otherwise the normalized name
 /// (lowercase, `-` replaced by `_`) is returned as is.
@@ -25,6 +26,10 @@ pub fn supported_encodings() -> &'static [&'static str] {
 /// assert_eq!(charset_norm::encoding::iana_name("UTF-8", true).unwrap(), "utf_8");
 /// assert_eq!(charset_norm::encoding::iana_name("windows-1252", true).unwrap(), "cp1252");
 /// ```
+///
+/// # Errors
+///
+/// [`Error::UnknownEncoding`] for an unknown name when `strict` is set.
 pub fn iana_name(name: &str, strict: bool) -> Result<String, Error> {
     let normalized = name.to_lowercase().replace('-', "_");
     if let Some(value) = tables::iana_lookup(&normalized) {
@@ -36,7 +41,8 @@ pub fn iana_name(name: &str, strict: bool) -> Result<String, Error> {
     Ok(normalized)
 }
 
-/// Other names CPython knows the canonical `encoding` by.
+/// Other names `CPython` knows the canonical `encoding` by.
+#[must_use]
 pub fn aliases(encoding: &str) -> Vec<&'static str> {
     let mut known = Vec::new();
     for &(alias, canonical) in ENCODING_ALIASES {
@@ -50,11 +56,13 @@ pub fn aliases(encoding: &str) -> Vec<&'static str> {
 }
 
 /// Whether decoding `encoding` involves multi-byte sequences.
+#[must_use]
 pub fn is_multi_byte_encoding(encoding: &str) -> bool {
     tables::is_multi_byte_encoding(encoding)
 }
 
 /// Whether two single-byte code pages are near-identical.
+#[must_use]
 pub fn is_cp_similar(encoding_a: &str, encoding_b: &str) -> bool {
     tables::similar_encodings(encoding_a).contains(&encoding_b)
 }
@@ -64,6 +72,10 @@ pub(crate) fn similar_encodings(encoding: &str) -> &'static [&'static str] {
 }
 
 /// Share of the 256 byte values two single-byte code pages decode alike.
+///
+/// # Errors
+///
+/// [`Error::UnknownEncoding`] when either name is not a supported code page.
 pub fn cp_similarity(encoding_a: &str, encoding_b: &str) -> Result<f64, Error> {
     if is_multi_byte_encoding(encoding_a) || is_multi_byte_encoding(encoding_b) {
         return Ok(0.0);
@@ -76,11 +88,12 @@ pub fn cp_similarity(encoding_a: &str, encoding_b: &str) -> Result<f64, Error> {
     Ok(matches as f64 / 256.0)
 }
 
-fn single_byte_decoder(encoding: &str) -> Result<impl Fn(u8) -> Option<char>, Error> {
+fn single_byte_decoder(encoding: &str) -> Result<impl Fn(u8) -> Option<char> + use<>, Error> {
     codecs::single_byte_decoder(encoding).ok_or_else(|| Error::UnknownEncoding(encoding.to_owned()))
 }
 
 /// Whether a detected signature/BOM should be removed before decoding.
+#[must_use]
 pub fn should_strip_sig_or_bom(encoding: &str) -> bool {
     encoding != "utf_16" && encoding != "utf_32"
 }
@@ -93,6 +106,7 @@ pub fn should_strip_sig_or_bom(encoding: &str) -> bool {
 /// assert_eq!(encoding, Some("utf_8"));
 /// assert_eq!(mark, b"\xef\xbb\xbf");
 /// ```
+#[must_use]
 pub fn identify_sig_or_bom(payload: &[u8]) -> (Option<&'static str>, &'static [u8]) {
     const MARKS: [(&str, &[u8]); 10] = [
         ("utf_8", b"\xef\xbb\xbf"),
@@ -151,6 +165,7 @@ pub fn any_specified_encoding(payload: &[u8], search_zone: usize) -> Option<&'st
 }
 
 /// Languages associated with a multi-byte (CJK) code page.
+#[must_use]
 pub fn mb_encoding_languages(encoding: &str) -> Vec<&'static str> {
     if encoding.starts_with("shift_")
         || encoding.starts_with("iso2022_jp")
@@ -169,6 +184,11 @@ pub fn mb_encoding_languages(encoding: &str) -> Vec<&'static str> {
 }
 
 /// Unicode ranges a single-byte code page mostly decodes into.
+///
+/// # Errors
+///
+/// [`Error::MultiByteEncoding`] for multi-byte encodings and
+/// [`Error::UnknownEncoding`] for unsupported code pages.
 pub fn encoding_unicode_range(encoding: &str) -> Result<Vec<&'static str>, Error> {
     if is_multi_byte_encoding(encoding) {
         return Err(Error::MultiByteEncoding(encoding.to_owned()));
@@ -203,6 +223,7 @@ pub fn encoding_unicode_range(encoding: &str) -> Result<Vec<&'static str>, Error
 }
 
 /// Languages whose alphabet has characters in `primary_range`.
+#[must_use]
 pub fn unicode_range_languages(primary_range: &str) -> Vec<&'static str> {
     tables::languages()
         .iter()
@@ -218,6 +239,10 @@ pub fn unicode_range_languages(primary_range: &str) -> Vec<&'static str> {
 
 /// Languages a single-byte code page can express (`["Latin Based"]` for
 /// Latin-only code pages). Unknown code pages yield no language.
+///
+/// # Errors
+///
+/// [`Error::MultiByteEncoding`] for multi-byte encodings.
 pub fn encoding_languages(encoding: &str) -> Result<Vec<&'static str>, Error> {
     if is_multi_byte_encoding(encoding) {
         return Err(Error::MultiByteEncoding(encoding.to_owned()));

@@ -1,4 +1,4 @@
-//! UTF-8, UTF-16, UTF-32 and UTF-7 decoders with CPython's error handling.
+//! UTF-8, UTF-16, UTF-32 and UTF-7 decoders with `CPython`'s error handling.
 
 use super::{DecodeError, Endian, Errors};
 
@@ -20,11 +20,11 @@ pub(super) fn decode_utf8(data: &[u8], errors: Errors) -> Result<String, DecodeE
 /// Strict UTF-16 validity, checked before any output is built: arbitrary
 /// bytes often look like UTF-16 for a long stretch before failing.
 fn valid_utf16(data: &[u8], little: bool) -> bool {
-    if data.len() % 2 != 0 {
+    if !data.len().is_multiple_of(2) {
         return false;
     }
     let mut pending_high = false;
-    for pair in data.chunks_exact(2) {
+    for pair in data.as_chunks::<2>().0 {
         let unit = if little {
             u16::from_le_bytes([pair[0], pair[1]])
         } else {
@@ -78,14 +78,15 @@ pub(super) fn decode_utf16(
         }
         let first = unit(data);
         if !(0xD800..0xE000).contains(&first) {
-            out.push(char::from_u32(first as u32).ok_or(DecodeError::Invalid)?);
+            out.push(char::from_u32(u32::from(first)).ok_or(DecodeError::Invalid)?);
             data = &data[2..];
             continue;
         }
         if first < 0xDC00 && data.len() >= 4 {
             let second = unit(&data[2..]);
             if (0xDC00..0xE000).contains(&second) {
-                let value = 0x10000 + (((first as u32) - 0xD800) << 10) + (second as u32 - 0xDC00);
+                let value =
+                    0x10000 + ((u32::from(first) - 0xD800) << 10) + (u32::from(second) - 0xDC00);
                 out.push(char::from_u32(value).ok_or(DecodeError::Invalid)?);
                 data = &data[4..];
                 continue;
@@ -122,7 +123,7 @@ pub(super) fn decode_utf32(
     };
     if errors == Errors::Strict {
         let valid = data.len() % 4 == 0
-            && data.chunks_exact(4).all(|quad| {
+            && data.as_chunks::<4>().0.iter().all(|quad| {
                 let bytes = [quad[0], quad[1], quad[2], quad[3]];
                 let value = if little {
                     u32::from_le_bytes(bytes)
@@ -165,15 +166,15 @@ fn is_base64(byte: u8) -> bool {
 
 fn from_base64(byte: u8) -> u32 {
     match byte {
-        b'A'..=b'Z' => (byte - b'A') as u32,
-        b'a'..=b'z' => (byte - b'a') as u32 + 26,
-        b'0'..=b'9' => (byte - b'0') as u32 + 52,
+        b'A'..=b'Z' => u32::from(byte - b'A'),
+        b'a'..=b'z' => u32::from(byte - b'a') + 26,
+        b'0'..=b'9' => u32::from(byte - b'0') + 52,
         b'+' => 62,
         _ => 63,
     }
 }
 
-/// Port of CPython's `PyUnicode_DecodeUTF7Stateful` (final mode). A lone
+/// Port of `CPython`'s `PyUnicode_DecodeUTF7Stateful` (final mode). A lone
 /// surrogate, which a Rust string cannot hold, is reported as an error.
 pub(super) fn decode_utf7(data: &[u8], errors: Errors) -> Result<String, DecodeError> {
     let mut out = String::with_capacity(data.len());
@@ -197,11 +198,11 @@ pub(super) fn decode_utf7(data: &[u8], errors: Errors) -> Result<String, DecodeE
         let byte = data[position];
         if in_shift {
             if is_base64(byte) {
-                buffer = (buffer << 6) | from_base64(byte) as u64;
+                buffer = (buffer << 6) | u64::from(from_base64(byte));
                 bits += 6;
                 position += 1;
                 if bits >= 16 {
-                    let unit = (buffer >> (bits - 16)) as u32 & 0xFFFF;
+                    let unit = u32::try_from((buffer >> (bits - 16)) & 0xFFFF).unwrap_or_default();
                     bits -= 16;
                     buffer &= (1u64 << bits) - 1;
                     if surrogate != 0 {

@@ -5,7 +5,7 @@ use std::hash::Hash;
 use rustc_hash::FxHashMap;
 
 use crate::tables::{self, Language};
-use crate::{mess, pyfloat, unicode, Error};
+use crate::{Error, mess, pyfloat, unicode};
 
 /// Names of every language with a frequency profile.
 pub fn languages() -> impl Iterator<Item = &'static str> {
@@ -18,12 +18,17 @@ fn language(name: &str) -> Result<&'static Language, Error> {
 
 /// Whether a language's alphabet has accented letters, and whether it is
 /// written with Latin letters only.
+///
+/// # Errors
+///
+/// [`Error::UnknownLanguage`] when the language has no frequency profile.
 pub fn get_target_features(name: &str) -> Result<(bool, bool), Error> {
     let language = language(name)?;
     Ok((language.has_accents, language.pure_latin))
 }
 
 /// Languages whose alphabet covers at least 20% of `characters`, best first.
+#[must_use]
 pub fn alphabet_languages(characters: &[char], ignore_non_latin: bool) -> Vec<&'static str> {
     let source_has_accents = characters
         .iter()
@@ -77,6 +82,11 @@ fn popularity_compare(language: &Language, ordered: &[char]) -> f64 {
 
     let mut approved = 0usize;
     for &(language_rank, popularity_rank) in &common {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "non-negative; truncation is the reference's int()"
+        )]
         let projected = (popularity_rank as f64 * projection_ratio) as usize;
         let distance = projected.abs_diff(language_rank);
 
@@ -119,11 +129,16 @@ fn popularity_compare(language: &Language, ordered: &[char]) -> f64 {
 
 /// Share of `ordered` (characters sorted from most to least frequent) whose
 /// rank agrees with the language's frequency profile. `NaN` when empty.
+///
+/// # Errors
+///
+/// [`Error::UnknownLanguage`] when the language has no frequency profile.
 pub fn characters_popularity_compare(language_name: &str, ordered: &[char]) -> Result<f64, Error> {
     Ok(popularity_compare(language(language_name)?, ordered))
 }
 
 /// Average each language's ratios across chunks, rounded, best first.
+#[must_use]
 pub fn merge_coherence_ratios<K: Clone + Eq + Hash>(results: Vec<Vec<(K, f64)>>) -> Vec<(K, f64)> {
     let mut order = Vec::new();
     let mut ratios: FxHashMap<K, Vec<f64>> = FxHashMap::default();
@@ -185,11 +200,13 @@ fn filter_alt_by<K: Clone + Eq + Hash>(
 
 /// Fold alternative language profiles (names suffixed with `—`) into their
 /// base language when a language is reported more than once.
+#[must_use]
 pub fn filter_alt_coherence_matches(results: Vec<(String, f64)>) -> Vec<(String, f64)> {
     filter_alt_by(results, |language| language.replace('—', ""))
 }
 
 /// Split text into lowercase layers of letters from compatible Unicode ranges.
+#[must_use]
 pub fn alpha_unicode_split(decoded: &str) -> Vec<String> {
     let mut layers: Vec<(u16, String)> = Vec::new();
     let mut previous: Option<(u16, usize)> = None;
@@ -199,11 +216,11 @@ pub fn alpha_unicode_split(decoded: &str) -> Vec<String> {
         if !alpha || range == unicode::NO_RANGE {
             continue;
         }
-        if let Some((previous_range, target)) = previous {
-            if previous_range == range {
-                layers[target].1.push(character);
-                continue;
-            }
+        if let Some((previous_range, target)) = previous
+            && previous_range == range
+        {
+            layers[target].1.push(character);
+            continue;
         }
         let target = layers
             .iter()
@@ -233,6 +250,11 @@ pub fn alpha_unicode_split(decoded: &str) -> Vec<String> {
 /// let languages = charset_norm::coherence::coherence_ratio(text, 0.1, None).unwrap();
 /// assert_eq!(languages[0].0, "English");
 /// ```
+///
+/// # Errors
+///
+/// [`Error::UnknownLanguage`] when `lg_inclusion` names a language without
+/// a frequency profile.
 pub fn coherence_ratio(
     decoded: &str,
     threshold: f64,
@@ -292,6 +314,7 @@ pub fn coherence_ratio(
 }
 
 #[cfg(test)]
+#[expect(clippy::float_cmp, reason = "ratios must match the reference exactly")]
 mod tests {
     use super::*;
 
@@ -301,9 +324,11 @@ mod tests {
             characters_popularity_compare("English", &['e', 'e', 't', 'a']).unwrap(),
             0.25
         );
-        assert!(characters_popularity_compare("English", &[])
-            .unwrap()
-            .is_nan());
+        assert!(
+            characters_popularity_compare("English", &[])
+                .unwrap()
+                .is_nan()
+        );
         assert!(characters_popularity_compare("Klingon", &['a']).is_err());
     }
 

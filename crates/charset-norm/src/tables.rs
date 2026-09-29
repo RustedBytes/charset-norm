@@ -4,7 +4,11 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-include!("generated/constants.rs");
+#[allow(clippy::unreadable_literal, reason = "generated data")]
+mod generated {
+    include!("generated/constants.rs");
+}
+pub use generated::*;
 
 fn sorted_lookup<V: Copy>(table: &[(&'static str, V)], key: &str) -> Option<V> {
     table

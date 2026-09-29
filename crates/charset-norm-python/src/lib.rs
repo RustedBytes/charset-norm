@@ -1,7 +1,7 @@
 //! Python bindings: exposes `charset-norm` as `charset_norm._native`.
 
 use charset_norm::codecs::DecodeError;
-use charset_norm::{chunks, coherence, encoding, mess, unicode, Error};
+use charset_norm::{Error, chunks, coherence, encoding, mess, unicode};
 use pyo3::exceptions::{
     PyImportError, PyKeyError, PyLookupError, PyOSError, PyTypeError, PyUnicodeDecodeError,
     PyValueError, PyZeroDivisionError,
@@ -197,31 +197,39 @@ fn cp_similarity(encoding_a: &str, encoding_b: &str) -> PyResult<f64> {
 }
 
 #[pyfunction]
-#[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (sequences, encoding_iana, offsets, chunk_size, bom_or_sig_available, strip_sig_or_bom, sig_payload, is_multi_byte_decoder, decoded_payload=None, deferred_decoding=false))]
+#[expect(
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
+    reason = "mirrors the Python signature of utils.cut_sequence_chunks"
+)]
 fn cut_sequence_chunks(
-    sequences: Vec<u8>,
+    sequences: &Bound<'_, PyAny>,
     encoding_iana: &str,
     offsets: Vec<usize>,
     chunk_size: usize,
     bom_or_sig_available: bool,
     strip_sig_or_bom: bool,
-    sig_payload: Vec<u8>,
+    sig_payload: &Bound<'_, PyAny>,
     is_multi_byte_decoder: bool,
     decoded_payload: Option<&str>,
     deferred_decoding: bool,
 ) -> PyResult<Vec<String>> {
+    let (mut owned_sequences, mut owned_sig) = (Vec::new(), Vec::new());
+    let sequences = bytes_of(sequences, &mut owned_sequences)?;
+    let sig_payload = bytes_of(sig_payload, &mut owned_sig)?;
     chunks::cut_sequence_chunks(
-        &sequences,
+        sequences,
         encoding_iana,
         offsets,
         chunk_size,
-        bom_or_sig_available,
-        strip_sig_or_bom,
-        &sig_payload,
-        is_multi_byte_decoder,
-        decoded_payload,
-        deferred_decoding,
+        chunks::Signature::from_flags(bom_or_sig_available, strip_sig_or_bom, sig_payload),
+        chunks::ChunkSource::select(
+            encoding_iana,
+            decoded_payload,
+            is_multi_byte_decoder,
+            deferred_decoding,
+        ),
     )
     .map_err(|error| decode_error(encoding_iana, error))
 }
@@ -256,6 +264,10 @@ fn get_target_features(language: &str) -> PyResult<(bool, bool)> {
 }
 
 #[pyfunction(signature = (characters, ignore_non_latin=false))]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 extracts sequence arguments as owned values"
+)]
 fn alphabet_languages(
     characters: Vec<String>,
     ignore_non_latin: bool,
@@ -268,6 +280,10 @@ fn alphabet_languages(
 }
 
 #[pyfunction]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 extracts sequence arguments as owned values"
+)]
 fn characters_popularity_compare(language: &str, ordered_characters: Vec<String>) -> PyResult<f64> {
     if ordered_characters.is_empty() {
         return Err(PyZeroDivisionError::new_err("division by zero"));

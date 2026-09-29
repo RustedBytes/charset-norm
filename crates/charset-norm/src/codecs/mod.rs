@@ -1,13 +1,13 @@
-//! Native implementations of the CPython codecs charset-normalizer probes.
+//! Native implementations of the `CPython` codecs charset-normalizer probes.
 //!
-//! Decoding must match CPython bit for bit: the detector's verdict depends on
+//! Decoding must match `CPython` bit for bit: the detector's verdict depends on
 //! which byte sequences a codec rejects. Unicode transformation formats are
 //! implemented directly, single-byte code pages and CJK codecs are driven by
-//! tables generated from CPython (see `bin/generate_native_tables.py`), and
-//! the stateful ISO-2022 / HZ / UTF-7 decoders are ports of CPython's.
+//! tables generated from `CPython` (see `bin/generate_native_tables.py`), and
+//! the stateful ISO-2022 / HZ / UTF-7 decoders are ports of `CPython`'s.
 
 //!
-//! Codec names follow CPython (`"cp1252"`, `"shift_jis"`, ...); aliases such
+//! Codec names follow `CPython` (`"cp1252"`, `"shift_jis"`, ...); aliases such
 //! as `"windows-1252"` or `"UTF-8"` are accepted too.
 //!
 //! ```
@@ -26,19 +26,19 @@ mod utf;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::tables::{iana_lookup, SINGLE_BYTE_CODECS};
+use crate::tables::{SINGLE_BYTE_CODECS, iana_lookup};
 
-use cjk::{cjk, decode_cjk, CJK_NAMES};
+use cjk::{CJK_NAMES, cjk, decode_cjk};
 use iso2022::{decode_hz, decode_iso2022};
 use single_byte::{decode_ascii, decode_single_byte, single_byte_chars};
-use utf::{decode_utf16, decode_utf32, decode_utf7, decode_utf8};
+use utf::{decode_utf7, decode_utf8, decode_utf16, decode_utf32};
 
 /// How decoding handles invalid input.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Errors {
     /// Fail on the first invalid sequence.
     Strict,
-    /// Skip invalid sequences, as CPython's `errors="ignore"` does.
+    /// Skip invalid sequences, as `CPython`'s `errors="ignore"` does.
     Ignore,
 }
 
@@ -155,11 +155,17 @@ fn lookup(encoding: &str) -> Option<Codec> {
 }
 
 /// Whether a native codec exists for `encoding` (or one of its aliases).
+#[must_use]
 pub fn is_known(encoding: &str) -> bool {
     lookup(encoding).is_some()
 }
 
-/// Decode `data` with `encoding`, exactly as CPython's `bytes.decode` would.
+/// Decode `data` with `encoding`, exactly as `CPython`'s `bytes.decode` would.
+///
+/// # Errors
+///
+/// [`DecodeError::Invalid`] when `data` is not valid for the encoding (strict
+/// mode), [`DecodeError::Unknown`] when the encoding has no native codec.
 pub fn decode(data: &[u8], encoding: &str, errors: Errors) -> Result<String, DecodeError> {
     let codec = lookup(encoding).ok_or(DecodeError::Unknown)?;
     match codec {
@@ -185,6 +191,10 @@ pub fn decode(data: &[u8], encoding: &str, errors: Errors) -> Result<String, Dec
 
 /// Whether `decode(data, encoding, Strict)` would succeed, without building
 /// the text when the codec allows a cheaper check.
+///
+/// # Errors
+///
+/// [`DecodeError::Unknown`] when the encoding has no native codec.
 pub fn is_valid(data: &[u8], encoding: &str) -> Result<bool, DecodeError> {
     match lookup(encoding).ok_or(DecodeError::Unknown)? {
         Codec::Ascii => Ok(data.is_ascii()),
@@ -204,7 +214,8 @@ pub fn is_valid(data: &[u8], encoding: &str) -> Result<bool, DecodeError> {
 
 /// Decode one byte in isolation, as `IncrementalDecoder(errors="ignore")`
 /// does for single-byte code pages. `None` for multi-byte codecs.
-pub fn single_byte_decoder(encoding: &str) -> Option<impl Fn(u8) -> Option<char>> {
+#[must_use]
+pub fn single_byte_decoder(encoding: &str) -> Option<impl Fn(u8) -> Option<char> + use<>> {
     let codec = lookup(encoding)?;
     let chars = match codec {
         Codec::Ascii | Codec::Latin1 => None,
@@ -220,6 +231,7 @@ pub fn single_byte_decoder(encoding: &str) -> Option<impl Fn(u8) -> Option<char>
 }
 
 /// Encode with `errors="replace"`. `None` when there is no native encoder.
+#[must_use]
 pub fn encode(text: &str, encoding: &str) -> Option<Vec<u8>> {
     match lookup(encoding)? {
         Codec::Utf8 { sig } => {
@@ -275,9 +287,9 @@ pub fn encode(text: &str, encoding: &str) -> Option<Vec<u8>> {
             let table = &SINGLE_BYTE_CODECS[index].1;
             // Later bytes win on duplicates, like codecs.charmap_build.
             let mut reverse = HashMap::with_capacity(256);
-            for (byte, &value) in table.iter().enumerate() {
+            for (byte, &value) in (0u8..=255).zip(table.iter()) {
                 if value != 0xFFFE {
-                    reverse.insert(value as u32, byte as u8);
+                    reverse.insert(u32::from(value), byte);
                 }
             }
             let question = *reverse.get(&('?' as u32))?;

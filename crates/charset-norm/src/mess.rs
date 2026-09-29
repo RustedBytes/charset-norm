@@ -2,35 +2,15 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::log::{emit, Level, Logger, NoLogger};
+use crate::log::{Level, Logger, NoLogger, emit};
 use crate::pyfloat;
 use crate::unicode::{
-    self, is_common_cjk, is_safe_ascii, RangeInfo, ACCENTUATED, ARABIC, ARABIC_ISOLATED_FORM, CJK,
-    HALFWIDTH_KATAKANA, HANGUL, HIRAGANA, KATAKANA, LATIN, LIGATURE, SENTENCE_OPEN_PUNCTUATION,
-    SUPERSCRIPT, THAI,
+    self, ACCENTUATED, ARABIC, ARABIC_ISOLATED_FORM, CJK, HALFWIDTH_KATAKANA, HANGUL, HIRAGANA,
+    KATAKANA, LATIN, LIGATURE, RangeInfo, SENTENCE_OPEN_PUNCTUATION, SUPERSCRIPT, THAI,
+    is_common_cjk, is_safe_ascii,
 };
 
 const GLYPH_MASK: u16 = CJK | HANGUL | KATAKANA | HIRAGANA | THAI;
-
-/// Unpacked character properties, used while computing the packed form.
-struct CharFields {
-    printable: bool,
-    alpha: bool,
-    upper: bool,
-    lower: bool,
-    space: bool,
-    digit: bool,
-    ascii: bool,
-    flags: u16,
-    punct: bool,
-    symbol: bool,
-    range: u16,
-    separator: bool,
-    emoticon: bool,
-    safe: bool,
-    common_cjk: bool,
-    unaccented: char,
-}
 
 const CACHE_SIZE: usize = 0x30000;
 const COMPUTED: u64 = 1 << 63;
@@ -50,43 +30,21 @@ const EMOTICON: u64 = 1 << 23;
 const SAFE: u64 = 1 << 24;
 const COMMON_CJK: u64 = 1 << 25;
 
-fn pack(info: &CharFields) -> u64 {
-    let mut bits = COMPUTED | info.flags as u64;
-    for (set, bit) in [
-        (info.printable, PRINTABLE),
-        (info.alpha, ALPHA),
-        (info.upper, UPPER),
-        (info.lower, LOWER),
-        (info.space, SPACE),
-        (info.digit, DIGIT),
-        (info.ascii, ASCII),
-        (info.punct, PUNCT),
-        (info.symbol, SYMBOL),
-        (info.separator, SEPARATOR),
-        (info.emoticon, EMOTICON),
-        (info.safe, SAFE),
-        (info.common_cjk, COMMON_CJK),
-    ] {
-        if set {
-            bits |= bit;
-        }
-    }
-    bits | (info.range as u64) << 26 | (info.unaccented as u64) << 36
-}
-
-/// Packed mess-detector view of a character (see `pack` for the layout).
+/// Packed mess-detector view of a character: bits 0-12 hold the Unicode
+/// name flags, 13-25 the boolean properties, 26-35 the range index and
+/// 36-56 the unaccented character; bit 63 marks a computed cache entry.
 #[derive(Clone, Copy)]
 struct CharInfo(u64);
 
 macro_rules! bit_accessors {
     ($($name:ident => $bit:expr),* $(,)?) => {
-        $(#[inline] fn $name(&self) -> bool { self.0 & $bit != 0 })*
+        $(#[inline] fn $name(self) -> bool { self.0 & $bit != 0 })*
     };
 }
 
 macro_rules! flag_accessors {
     ($($name:ident => $flag:expr),* $(,)?) => {
-        $(#[inline] fn $name(&self) -> bool { self.flags() & $flag != 0 })*
+        $(#[inline] fn $name(self) -> bool { self.flags() & $flag != 0 })*
     };
 }
 
@@ -121,22 +79,22 @@ impl CharInfo {
     }
 
     #[inline]
-    fn flags(&self) -> u16 {
+    fn flags(self) -> u16 {
         (self.0 & 0x1FFF) as u16
     }
 
     #[inline]
-    fn case_variable(&self) -> bool {
+    fn case_variable(self) -> bool {
         self.lower() != self.upper()
     }
 
     #[inline]
-    fn range(&self) -> u16 {
+    fn range(self) -> u16 {
         ((self.0 >> 26) & 0x3FF) as u16
     }
 
     #[inline]
-    fn unaccented(&self) -> u32 {
+    fn unaccented(self) -> u32 {
         ((self.0 >> 36) & 0x1F_FFFF) as u32
     }
 }
@@ -153,18 +111,18 @@ pub(crate) fn alpha_range(character: char) -> (bool, u16) {
 fn char_info(character: char) -> CharInfo {
     let codepoint = character as usize;
     if codepoint >= CACHE_SIZE {
-        return CharInfo(pack(&compute_char_info(character)));
+        return CharInfo(compute_char_info(character));
     }
     let bits = CACHE[codepoint].load(Ordering::Relaxed);
     if bits & COMPUTED != 0 {
         return CharInfo(bits);
     }
-    let bits = pack(&compute_char_info(character));
+    let bits = compute_char_info(character);
     CACHE[codepoint].store(bits, Ordering::Relaxed);
     CharInfo(bits)
 }
 
-fn compute_char_info(character: char) -> CharFields {
+fn compute_char_info(character: char) -> u64 {
     let props = unicode::props(character);
     let ascii = character.is_ascii();
     let printable = props.printable(character);
@@ -184,27 +142,40 @@ fn compute_char_info(character: char) -> CharFields {
         || matches!(category, "Po" | "Pd" | "Pc");
     let flags = props.flags;
 
-    CharFields {
-        printable,
-        alpha,
-        upper: props.upper,
-        lower: props.lower,
-        space: props.space,
-        digit: props.digit,
-        ascii,
-        flags,
-        punct,
-        symbol,
-        range: props.range,
-        separator,
-        emoticon: !alpha && range.is_some_and(|range| range.emoticon),
-        safe: is_safe_ascii(character),
-        common_cjk: flags & CJK != 0 && is_common_cjk(character),
-        unaccented: props.unaccented,
+    let mut bits = COMPUTED
+        | u64::from(flags)
+        | u64::from(props.range) << 26
+        | u64::from(u32::from(props.unaccented)) << 36;
+    for (set, bit) in [
+        (printable, PRINTABLE),
+        (alpha, ALPHA),
+        (props.upper, UPPER),
+        (props.lower, LOWER),
+        (props.space, SPACE),
+        (props.digit, DIGIT),
+        (ascii, ASCII),
+        (punct, PUNCT),
+        (symbol, SYMBOL),
+        (separator, SEPARATOR),
+        (
+            !alpha && range.is_some_and(|range| range.emoticon),
+            EMOTICON,
+        ),
+        (is_safe_ascii(character), SAFE),
+        (flags & CJK != 0 && is_common_cjk(character), COMMON_CJK),
+    ] {
+        if set {
+            bits |= bit;
+        }
     }
+    bits
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "running state of the reference plugins, one flag per condition"
+)]
 struct Detectors {
     punctuation: usize,
     symbols: usize,
@@ -265,7 +236,7 @@ impl Detectors {
         }
     }
 
-    fn feed_always(&mut self, ch: char, i: &CharInfo) {
+    fn feed_always(&mut self, ch: char, i: CharInfo) {
         if ch == '\u{1b}' {
             self.has_escape = true;
         }
@@ -276,7 +247,7 @@ impl Detectors {
         self.feed_word(ch, i);
     }
 
-    fn feed_printable(&mut self, ch: char, i: &CharInfo) {
+    fn feed_printable(&mut self, ch: char, i: CharInfo) {
         self.printable_count += 1;
         if self.last_printable != Some(ch) && !i.safe() {
             if i.punct() {
@@ -292,31 +263,31 @@ impl Detectors {
             self.last_range = None;
             return;
         }
-        if let Some(previous) = self.last_range {
-            if (previous != i.range() || previous == unicode::NO_RANGE)
-                && unicode::suspicious_range_indices(previous, i.range())
-            {
-                self.suspicious_ranges += 1;
-            }
+        if let Some(previous) = self.last_range
+            && (previous != i.range() || previous == unicode::NO_RANGE)
+            && unicode::suspicious_range_indices(previous, i.range())
+        {
+            self.suspicious_ranges += 1;
         }
         self.last_range = Some(i.range());
     }
 
-    fn feed_alpha(&mut self, i: &CharInfo) {
+    fn feed_alpha(&mut self, i: CharInfo) {
         self.alpha_count += 1;
         if i.accentuated() {
             self.accents += 1;
         }
         if i.latin() {
             self.latin_count += 1;
-            if let Some((upper, accent, unaccented)) = &self.last_latin {
-                if i.accentuated() && *accent {
-                    if i.upper() && *upper {
-                        self.duplicate_count += 1;
-                    }
-                    if i.unaccented() == *unaccented {
-                        self.duplicate_count += 1;
-                    }
+            if let Some((upper, accent, unaccented)) = &self.last_latin
+                && i.accentuated()
+                && *accent
+            {
+                if i.upper() && *upper {
+                    self.duplicate_count += 1;
+                }
+                if i.unaccented() == *unaccented {
+                    self.duplicate_count += 1;
                 }
             }
             self.last_latin = Some((i.upper(), i.accentuated(), i.unaccented()));
@@ -348,7 +319,7 @@ impl Detectors {
         }
     }
 
-    fn feed_archaic(&mut self, i: &CharInfo) {
+    fn feed_archaic(&mut self, i: CharInfo) {
         let concerned = i.alpha() && i.case_variable();
         if !concerned && self.archaic_chunk_count > 0 {
             if self.archaic_chunk_count <= 64 && !i.digit() && !self.archaic_ascii_only {
@@ -382,7 +353,7 @@ impl Detectors {
         self.archaic_last_lower = i.lower();
     }
 
-    fn feed_word(&mut self, ch: char, i: &CharInfo) {
+    fn feed_word(&mut self, ch: char, i: CharInfo) {
         if i.alpha() {
             if self.buffer_last_ligature {
                 self.buffer_internal_ligature = true;
@@ -480,21 +451,13 @@ impl Detectors {
             0.0
         } else {
             let r = (self.punctuation + self.symbols) as f64 / self.printable_count as f64;
-            if r >= 0.3 {
-                r
-            } else {
-                0.0
-            }
+            if r >= 0.3 { r } else { 0.0 }
         };
         let ta = if self.alpha_count < 8 {
             0.0
         } else {
             let r = self.accents as f64 / self.alpha_count as f64;
-            if r >= 0.35 {
-                r
-            } else {
-                0.0
-            }
+            if r >= 0.35 { r } else { 0.0 }
         };
         let up = if self.all_count == 0 {
             0.0
@@ -557,6 +520,7 @@ impl Detectors {
 /// ```
 /// assert_eq!(charset_norm::mess::mess_ratio("plain text", 0.2), 0.0);
 /// ```
+#[must_use]
 pub fn mess_ratio(decoded_sequence: &str, maximum_threshold: f64) -> f64 {
     mess_ratio_with(decoded_sequence, maximum_threshold, false, &NoLogger)
 }
@@ -587,19 +551,19 @@ pub fn mess_ratio_with(
         remaining -= block;
         for ch in characters.by_ref().take(block) {
             let info = char_info(ch);
-            detectors.feed_always(ch, &info);
+            detectors.feed_always(ch, info);
             if pure_ascii {
                 if info.printable() {
-                    detectors.feed_printable(ch, &info);
+                    detectors.feed_printable(ch, info);
                 }
                 continue;
             }
-            detectors.feed_archaic(&info);
+            detectors.feed_archaic(info);
             if info.printable() {
-                detectors.feed_printable(ch, &info);
+                detectors.feed_printable(ch, info);
             }
             if info.alpha() {
-                detectors.feed_alpha(&info);
+                detectors.feed_alpha(info);
             }
         }
         mean = detectors.ratios().iter().sum();
@@ -610,9 +574,9 @@ pub fn mess_ratio_with(
     }
     if completed {
         let newline = char_info('\n');
-        detectors.feed_word('\n', &newline);
+        detectors.feed_word('\n', newline);
         if !pure_ascii {
-            detectors.feed_archaic(&newline);
+            detectors.feed_archaic(newline);
         }
         if !newline.printable() && !newline.space() {
             detectors.unprintable += 1;
@@ -622,7 +586,9 @@ pub fn mess_ratio_with(
     }
     if debug {
         emit(logger, Level::Trace, || {
-            format!("Mess-detector extended-analysis start. intermediary_mean_mess_ratio_calc={step} mean_mess_ratio={mean:?} maximum_threshold={maximum_threshold:?}")
+            format!(
+                "Mess-detector extended-analysis start. intermediary_mean_mess_ratio_calc={step} mean_mess_ratio={mean:?} maximum_threshold={maximum_threshold:?}"
+            )
         });
         if length > 16 {
             emit(logger, Level::Trace, || {

@@ -24,7 +24,7 @@ pub(super) fn decode_ascii(data: &[u8], errors: Errors) -> Result<String, Decode
 #[inline]
 pub(super) fn ascii_prefix(data: &[u8]) -> usize {
     let mut length = 0;
-    for chunk in data.chunks_exact(8) {
+    for chunk in data.as_chunks::<8>().0 {
         let word = u64::from_le_bytes([
             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
         ]);
@@ -50,7 +50,7 @@ pub(super) fn single_byte_chars(index: usize) -> &'static [Option<char>; 256] {
                 let mut chars = [None; 256];
                 for (slot, &value) in chars.iter_mut().zip(table.iter()) {
                     if value != 0xFFFE {
-                        *slot = char::from_u32(value as u32);
+                        *slot = char::from_u32(u32::from(value));
                     }
                 }
                 chars

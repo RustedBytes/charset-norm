@@ -6,7 +6,7 @@
 //! every supported code page, measuring how noisy the result looks ("chaos")
 //! and how well it matches known languages ("coherence").
 //!
-//! Decoding reproduces CPython's codecs byte for byte, so results agree with
+//! Decoding reproduces `CPython`'s codecs byte for byte, so results agree with
 //! the Python package.
 //!
 //! ```
@@ -36,10 +36,10 @@ mod pyfloat;
 mod tables;
 pub mod unicode;
 
-pub use detect::{detect, from_bytes, from_bytes_with, from_path, is_binary, DetectionOptions};
+pub use detect::{DetectionOptions, detect, from_bytes, from_bytes_with, from_path, is_binary};
 pub use error::Error;
 pub use log::{Level, Logger, NoLogger};
-pub use matches::{sort_by_rank, CharsetMatch, CharsetMatches, OutputError};
+pub use matches::{CharsetMatch, CharsetMatches, OutputError, sort_by_rank};
 
 /// Payloads shorter than this are considered too small for reliable detection.
 pub const TOO_SMALL_SEQUENCE: usize = 32;

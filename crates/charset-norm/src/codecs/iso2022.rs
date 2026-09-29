@@ -1,6 +1,6 @@
-//! Stateful HZ and ISO-2022 decoders (ports of CPython's).
+//! Stateful HZ and ISO-2022 decoders (ports of `CPython`'s).
 
-use super::cjk::{cjk, push_value, Step};
+use super::cjk::{Step, advance, cjk, push_value};
 use super::{DecodeError, Errors, Iso2022Variant};
 
 /* ---------------------------------------------------------------------- */
@@ -53,13 +53,8 @@ pub(super) fn decode_hz(data: &[u8], errors: Errors) -> Result<String, DecodeErr
                 None => Step::Error(1),
             }
         };
-        match step {
-            Step::Ok(length) => position += length,
-            Step::Error(_) | Step::Incomplete if errors == Errors::Strict => {
-                return Err(DecodeError::Invalid)
-            }
-            Step::Error(length) => position += length,
-            Step::Incomplete => break,
+        if !advance(step, errors, &mut position)? {
+            break;
         }
     }
     Ok(out)
@@ -220,7 +215,7 @@ fn iso2022_escape(config: &Iso2022Config, data: &[u8]) -> Result<(usize, usize, 
 }
 
 fn iso8859_7_decode(byte: u8) -> Option<char> {
-    let c = byte as u32;
+    let c = u32::from(byte);
     let value = if c < 0xA0 || (c < 0xC0 && (0x288f_3bc9u32 & (1u32 << (c - 0xA0))) != 0) {
         c
     } else if (0xB4..=0xFE).contains(&c)
@@ -239,6 +234,60 @@ fn iso8859_7_decode(byte: u8) -> Option<char> {
     char::from_u32(value)
 }
 
+/// `ESC N x`: one character from the G2 charset (ISO-2022-JP-2 only).
+fn single_shift(g2: u8, rest: &[u8], out: &mut String) -> Step {
+    if rest.len() < 3 {
+        return Step::Incomplete;
+    }
+    let value = rest[2];
+    let decoded = match g2 {
+        CHARSET_ISO8859_1 => (value < 0x80).then(|| char::from(value + 0x80)),
+        CHARSET_ISO8859_7 => iso8859_7_decode(value ^ 0x80),
+        CHARSET_ASCII => (value & 0x80 == 0).then_some(char::from(value)),
+        _ => None, // CPython raises an internal codec error
+    };
+    match decoded {
+        Some(character) => {
+            out.push(character);
+            Step::Ok(3)
+        }
+        None => Step::Error(3),
+    }
+}
+
+/// One character of the charset currently designated to G0/G1.
+fn designated(
+    config: &Iso2022Config,
+    charset: u8,
+    rest: &[u8],
+    out: &mut String,
+) -> Result<Step, DecodeError> {
+    let tables = cjk();
+    let designation = config
+        .designations
+        .iter()
+        .find(|(mark, _)| *mark == charset)
+        .map_or(Designation::Dummy, |(_, designation)| *designation);
+    Ok(match designation {
+        Designation::Double(_) if rest.len() < 2 => Step::Incomplete,
+        Designation::Double(table) => match tables.iso2022[table].get(rest[0], rest[1]) {
+            Some(value) => {
+                push_value(out, value, &tables.pairs)?;
+                Step::Ok(2)
+            }
+            None => Step::Error(2),
+        },
+        Designation::Single(table) => match tables.iso2022[table].get(0, rest[0]) {
+            Some(value) => {
+                push_value(out, value, &tables.pairs)?;
+                Step::Ok(1)
+            }
+            None => Step::Error(1),
+        },
+        Designation::Dummy => Step::Error(1),
+    })
+}
+
 pub(super) fn decode_iso2022(
     variant: Iso2022Variant,
     data: &[u8],
@@ -249,7 +298,6 @@ pub(super) fn decode_iso2022(
     const SI: u8 = 0x0F;
     const LF: u8 = 0x0A;
 
-    let tables = cjk();
     let config = iso2022_config(variant);
     let mut out = String::with_capacity(data.len());
     let mut g = [CHARSET_ASCII; 4];
@@ -261,7 +309,7 @@ pub(super) fn decode_iso2022(
         let rest = &data[position..];
         let byte = rest[0];
         if escape_throughout {
-            out.push(byte as char); // assume ISO-8859-1
+            out.push(char::from(byte)); // assume ISO-8859-1
             position += 1;
             if is_escape_end(byte) {
                 escape_throughout = false;
@@ -269,7 +317,7 @@ pub(super) fn decode_iso2022(
             continue;
         }
         let bypass = |out: &mut String| {
-            out.push(byte as char);
+            out.push(char::from(byte));
             Step::Ok(1)
         };
         let step = match byte {
@@ -283,37 +331,17 @@ pub(super) fn decode_iso2022(
                     Err(step) => step,
                 }
             }
-            ESC if config.use_g2 && rest[1] == b'N' => {
-                if rest.len() < 3 {
-                    Step::Incomplete
-                } else {
-                    let value = rest[2];
-                    let decoded = match g[2] {
-                        CHARSET_ISO8859_1 => (value < 0x80).then(|| (value + 0x80) as char),
-                        CHARSET_ISO8859_7 => iso8859_7_decode(value ^ 0x80),
-                        CHARSET_ASCII => (value & 0x80 == 0).then_some(value as char),
-                        _ => None, // CPython raises an internal codec error
-                    };
-                    match decoded {
-                        Some(character) => {
-                            out.push(character);
-                            Step::Ok(3)
-                        }
-                        None => Step::Error(3),
-                    }
-                }
-            }
+            ESC if config.use_g2 && rest[1] == b'N' => single_shift(g[2], rest, &mut out),
             ESC => {
-                out.push(ESC as char);
+                out.push(char::from(ESC));
                 escape_throughout = true;
                 Step::Ok(1)
             }
-            SI if config.no_shift => bypass(&mut out),
+            SI | SO if config.no_shift => bypass(&mut out),
             SI => {
                 shifted = false;
                 Step::Ok(1)
             }
-            SO if config.no_shift => bypass(&mut out),
             SO => {
                 shifted = true;
                 Step::Ok(1)
@@ -330,45 +358,12 @@ pub(super) fn decode_iso2022(
                 if charset == CHARSET_ASCII {
                     bypass(&mut out)
                 } else {
-                    let designation = config
-                        .designations
-                        .iter()
-                        .find(|(mark, _)| *mark == charset)
-                        .map(|(_, designation)| *designation)
-                        .unwrap_or(Designation::Dummy);
-                    match designation {
-                        Designation::Double(table) => {
-                            if rest.len() < 2 {
-                                Step::Incomplete
-                            } else {
-                                match tables.iso2022[table].get(rest[0], rest[1]) {
-                                    Some(value) => {
-                                        push_value(&mut out, value, &tables.pairs)?;
-                                        Step::Ok(2)
-                                    }
-                                    None => Step::Error(2),
-                                }
-                            }
-                        }
-                        Designation::Single(table) => match tables.iso2022[table].get(0, byte) {
-                            Some(value) => {
-                                push_value(&mut out, value, &tables.pairs)?;
-                                Step::Ok(1)
-                            }
-                            None => Step::Error(1),
-                        },
-                        Designation::Dummy => Step::Error(1),
-                    }
+                    designated(&config, charset, rest, &mut out)?
                 }
             }
         };
-        match step {
-            Step::Ok(length) => position += length,
-            Step::Error(_) | Step::Incomplete if errors == Errors::Strict => {
-                return Err(DecodeError::Invalid)
-            }
-            Step::Error(length) => position += length,
-            Step::Incomplete => break,
+        if !advance(step, errors, &mut position)? {
+            break;
         }
     }
     Ok(out)

@@ -1,11 +1,11 @@
-//! Float helpers reproducing CPython's results bit for bit.
+//! Float helpers reproducing `CPython`'s results bit for bit.
 
-/// `round(value, digits)` with CPython's correctly-rounded semantics.
+/// `round(value, digits)` with `CPython`'s correctly-rounded semantics.
 pub(crate) fn round(value: f64, digits: usize) -> f64 {
+    const POWERS: [f64; 9] = [1.0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8];
     if !value.is_finite() {
         return value;
     }
-    const POWERS: [f64; 9] = [1.0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8];
     if digits < POWERS.len() {
         // Below 1e9 the scaled product is within 1.2e-7 of the exact value, so
         // away from a decimal tie it selects the same integer k as CPython's
@@ -20,7 +20,7 @@ pub(crate) fn round(value: f64, digits: usize) -> f64 {
     format!("{value:.digits$}").parse().unwrap_or(value)
 }
 
-/// `sum()` over floats as CPython 3.12+ computes it (Neumaier compensation).
+/// `sum()` over floats as `CPython` 3.12+ computes it (Neumaier compensation).
 pub(crate) fn sum(values: &[f64]) -> f64 {
     let mut total = 0.0f64;
     let mut compensation = 0.0f64;
@@ -40,6 +40,7 @@ pub(crate) fn sum(values: &[f64]) -> f64 {
 }
 
 #[cfg(test)]
+#[expect(clippy::float_cmp, reason = "results must match CPython exactly")]
 mod tests {
     use super::*;
 

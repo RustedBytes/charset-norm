@@ -1,4 +1,4 @@
-//! Stateless CJK codecs driven by tables probed from CPython.
+//! Stateless CJK codecs driven by tables probed from `CPython`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -145,14 +145,15 @@ pub(super) fn cjk() -> &'static CjkData {
                 let mut need = [0u8; 256];
                 need.copy_from_slice(section.take(256));
                 let mut single = [NONE; 256];
-                for value in single.iter_mut() {
+                for value in &mut single {
                     *value = section.u24();
                 }
                 let double = section.rows();
                 let triple_prefix = section.u8();
                 let triple = section.rows();
-                let ascii_identity =
-                    (0..0x80).all(|byte| need[byte] == 1 && single[byte] == byte as u32);
+                let ascii_identity = (0u8..0x80).all(|byte| {
+                    need[usize::from(byte)] == 1 && single[usize::from(byte)] == u32::from(byte)
+                });
                 data.codecs.insert(
                     codec,
                     CjkCodec {
@@ -229,25 +230,27 @@ fn euc_kr_makeup(data: &[u8]) -> Option<char> {
     if data[2] != 0xA4 || data[4] != 0xA4 || data[6] != 0xA4 {
         return None;
     }
-    let choseong = match data[3] {
-        value @ 0xA1..=0xBE => CGK2U_CHOSEONG[(value - 0xA1) as usize],
+    // Leading consonant, vowel and trailing consonant of the syllable.
+    let lead = match data[3] {
+        value @ 0xA1..=0xBE => CGK2U_CHOSEONG[usize::from(value - 0xA1)],
         _ => 127,
     };
-    let jungseong = match data[5] {
+    let vowel = match data[5] {
         value @ 0xBF..=0xD3 => value - 0xBF,
         _ => 127,
     };
-    let jongseong = match data[7] {
+    let tail = match data[7] {
         0xD4 => 0,
-        value @ 0xA1..=0xBE => CGK2U_JONGSEONG[(value - 0xA1) as usize],
+        value @ 0xA1..=0xBE => CGK2U_JONGSEONG[usize::from(value - 0xA1)],
         _ => 127,
     };
-    if choseong == 127 || jungseong == 127 || jongseong == 127 {
+    if lead == 127 || vowel == 127 || tail == 127 {
         return None;
     }
-    char::from_u32(0xAC00 + choseong as u32 * 588 + jungseong as u32 * 28 + jongseong as u32)
+    char::from_u32(0xAC00 + u32::from(lead) * 588 + u32::from(vowel) * 28 + u32::from(tail))
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum Step {
     /// Consumed this many bytes.
     Ok(usize),
@@ -255,6 +258,23 @@ pub(super) enum Step {
     Error(usize),
     /// Not enough input left for the sequence.
     Incomplete,
+}
+
+/// Move past a decoding step. Returns `Ok(false)` when decoding should stop
+/// (incomplete trailing sequence under `errors="ignore"`).
+pub(super) fn advance(
+    step: Step,
+    errors: Errors,
+    position: &mut usize,
+) -> Result<bool, DecodeError> {
+    match step {
+        Step::Error(_) | Step::Incomplete if errors == Errors::Strict => Err(DecodeError::Invalid),
+        Step::Ok(length) | Step::Error(length) => {
+            *position += length;
+            Ok(true)
+        }
+        Step::Incomplete => Ok(false),
+    }
 }
 
 fn gb18030_four_byte(data: &[u8], out: &mut String, ranges: &[(u32, u32)]) -> Step {
@@ -267,10 +287,10 @@ fn gb18030_four_byte(data: &[u8], out: &mut String, ranges: &[(u32, u32)]) -> St
         return Step::Error(1);
     }
     let (c1, c2, c3, c4) = (
-        (c1 - 0x81) as u32,
-        (c2 - 0x30) as u32,
-        (c3 - 0x81) as u32,
-        (c4 - 0x30) as u32,
+        u32::from(c1 - 0x81),
+        u32::from(c2 - 0x30),
+        u32::from(c3 - 0x81),
+        u32::from(c4 - 0x30),
     );
     if c1 < 4 {
         let index = (c1 * 10 + c2) * 1260 + c3 * 10 + c4;
@@ -358,13 +378,8 @@ pub(super) fn decode_cjk(
             )?,
             _ => Step::Error(1),
         };
-        match step {
-            Step::Ok(length) => position += length,
-            Step::Error(_) | Step::Incomplete if errors == Errors::Strict => {
-                return Err(DecodeError::Invalid)
-            }
-            Step::Error(length) => position += length,
-            Step::Incomplete => break,
+        if !advance(step, errors, &mut position)? {
+            break;
         }
     }
     Ok(out)

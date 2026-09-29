@@ -15,6 +15,7 @@ pub enum Level {
 
 impl Level {
     /// The equivalent numeric level of Python's `logging` module.
+    #[must_use]
     pub fn python_level(self) -> i32 {
         match self {
             Level::Trace => 5,

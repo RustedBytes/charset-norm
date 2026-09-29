@@ -1,7 +1,7 @@
 //! End-to-end detection through the public API.
 
 use charset_norm::codecs::{self, Errors};
-use charset_norm::{from_bytes, from_bytes_with, is_binary, DetectionOptions, Level, Logger};
+use charset_norm::{DetectionOptions, Level, Logger, from_bytes, from_bytes_with, is_binary};
 use std::cell::RefCell;
 
 fn detect(text: &str, encoding: &str) -> String {
@@ -77,11 +77,13 @@ fn isolation_and_logging() {
     let logger = Collect(RefCell::new(Vec::new()));
     let results = from_bytes_with(&payload, &options, &logger);
     assert_eq!(results.best().unwrap().encoding(), "latin_1");
-    assert!(logger
-        .0
-        .borrow()
-        .iter()
-        .any(|message| message.starts_with("Encoding detection:")));
+    assert!(
+        logger
+            .0
+            .borrow()
+            .iter()
+            .any(|message| message.starts_with("Encoding detection:"))
+    );
 }
 
 #[test]

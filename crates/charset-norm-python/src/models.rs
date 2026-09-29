@@ -1,9 +1,10 @@
 //! Python result classes, backed by the core `CharsetMatch`.
 
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use charset_norm::codecs::{self, DecodeError};
-use charset_norm::{encoding, sort_by_rank, OutputError};
+use charset_norm::{OutputError, encoding, sort_by_rank};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyIndexError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
@@ -161,7 +162,7 @@ impl CharsetMatch {
     }
 
     fn __repr__(&mut self, py: Python<'_>) -> PyResult<String> {
-        let fingerprint = self.fingerprint_value(py)? as isize;
+        let fingerprint = self.fingerprint_value(py)?;
         Ok(format!(
             "<CharsetMatch '{}' fp({})>",
             self.inner.encoding(),
@@ -312,10 +313,10 @@ impl CharsetMatch {
 
     #[pyo3(signature = (encoding="utf_8"))]
     fn output(&mut self, py: Python<'_>, encoding: &str) -> PyResult<Py<PyAny>> {
-        if let Some((cached, payload)) = &self.output {
-            if cached == encoding {
-                return Ok(payload.clone_ref(py));
-            }
+        if let Some((cached, payload)) = &self.output
+            && cached == encoding
+        {
+            return Ok(payload.clone_ref(py));
         }
         self.ensure_decoded(py)?;
         let text = self
@@ -335,8 +336,8 @@ impl CharsetMatch {
     }
 
     #[getter]
-    fn fingerprint(&mut self, py: Python<'_>) -> PyResult<isize> {
-        Ok(self.fingerprint_value(py)? as isize)
+    fn fingerprint(&mut self, py: Python<'_>) -> PyResult<u64> {
+        self.fingerprint_value(py)
     }
 
     #[getter]
@@ -457,15 +458,16 @@ impl CharsetMatches {
     ) -> PyResult<Py<CharsetMatch>> {
         if let Ok(index) = item.extract::<isize>() {
             self.ensure_sorted(py)?;
-            let index = if index < 0 {
-                self.results.len() as isize + index
+            let length = self.results.len();
+            let position = if index < 0 {
+                length.checked_sub(index.unsigned_abs())
             } else {
-                index
+                usize::try_from(index).ok()
             };
-            if index < 0 || index as usize >= self.results.len() {
-                return Err(PyIndexError::new_err("list index out of range"));
-            }
-            return Ok(self.results[index as usize].clone_ref(py));
+            return match position.filter(|position| *position < length) {
+                Some(position) => Ok(self.results[position].clone_ref(py)),
+                None => Err(PyIndexError::new_err("list index out of range")),
+            };
         }
         if let Ok(name) = item.extract::<String>() {
             let name = encoding::iana_name(&name, false).map_err(to_py_error)?;
@@ -514,7 +516,7 @@ fn json_string(value: &str, out: &mut String) {
             _ => {
                 let mut units = [0u16; 2];
                 for unit in character.encode_utf16(&mut units) {
-                    out.push_str(&format!("\\u{unit:04x}"));
+                    let _ = write!(out, "\\u{unit:04x}");
                 }
             }
         }
@@ -552,17 +554,18 @@ fn json_float(value: f64) -> String {
         let exponent_sign = if exponent < 0 { '-' } else { '+' };
         return format!("{sign}{mantissa}e{exponent_sign}{:02}", exponent.abs());
     }
+    // Position of the decimal point relative to the digits (-3..=16 here).
     let point = exponent + 1;
     let body = if point <= 0 {
-        format!("0.{}{}", "0".repeat((-point) as usize), digits)
-    } else if point as usize >= digits.len() {
-        format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
+        let zeros = usize::try_from(-point).unwrap_or_default();
+        format!("0.{}{digits}", "0".repeat(zeros))
     } else {
-        format!(
-            "{}.{}",
-            &digits[..point as usize],
-            &digits[point as usize..]
-        )
+        let point = usize::try_from(point).unwrap_or_default();
+        if point >= digits.len() {
+            format!("{digits}{}.0", "0".repeat(point - digits.len()))
+        } else {
+            format!("{}.{}", &digits[..point], &digits[point..])
+        }
     };
     format!("{sign}{body}")
 }
@@ -632,7 +635,7 @@ impl CliDetectionResult {
 
     /// Same output as `json.dumps(self.__dict__, ensure_ascii=True, indent=4)`.
     fn to_json(&self) -> String {
-        fn string_or_null(value: &Option<String>, out: &mut String) {
+        fn string_or_null(value: Option<&String>, out: &mut String) {
             match value {
                 Some(value) => json_string(value, out),
                 None => out.push_str("null"),
@@ -664,7 +667,7 @@ impl CliDetectionResult {
         key("path", &mut out, true);
         json_string(&self.path, &mut out);
         key("encoding", &mut out, false);
-        string_or_null(&self.encoding, &mut out);
+        string_or_null(self.encoding.as_ref(), &mut out);
         key("encoding_aliases", &mut out, false);
         list(&self.encoding_aliases, &mut out);
         key("alternative_encodings", &mut out, false);
@@ -680,7 +683,7 @@ impl CliDetectionResult {
         key("coherence", &mut out, false);
         out.push_str(&json_float(self.coherence));
         key("unicode_path", &mut out, false);
-        string_or_null(&self.unicode_path, &mut out);
+        string_or_null(self.unicode_path.as_ref(), &mut out);
         key("is_preferred", &mut out, false);
         out.push_str(if self.is_preferred { "true" } else { "false" });
         out.push_str("\n}");
@@ -701,7 +704,7 @@ mod tests {
             (1e-05, "1e-05"),
             (0.0001, "0.0001"),
             (1e16, "1e+16"),
-            (123456789012345.6, "123456789012345.6"),
+            (123_456_789_012_345.6, "123456789012345.6"),
             (-2.5, "-2.5"),
             (99.123, "99.123"),
         ] {
