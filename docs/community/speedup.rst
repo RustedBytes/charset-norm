@@ -15,7 +15,7 @@ locally with Rust 1.83 or newer:
 
   ::
 
-    pip install charset-normalizer --no-binary charset-normalizer
+    pip install charset-norm --no-binary charset-norm
 
 
 There is no pure-Python fallback. An installation that cannot load the native

@@ -14,7 +14,7 @@ Basic usage:
    'Bсеки човек има право на образование. Oбразованието!'
 
 Others methods and usages are available - see the full documentation
-at <https://github.com/Ousret/charset_normalizer>.
+at <https://github.com/RustedBytes/charset-norm>.
 :copyright: (c) Ahmed TAHRI
 :license: MIT, see LICENSE for more details.
 """

@@ -3,7 +3,7 @@ requires = ["maturin>=1.14.1,<2"]
 build-backend = "maturin"
 
 [project]
-name = "charset-normalizer"
+name = "charset-norm"
 description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
 license = {text = "MIT"}
 readme = "README.md"
@@ -81,10 +81,10 @@ include = [
 normalizer = "charset_normalizer.cli:cli_detect"
 
 [project.urls]
-"Changelog" = "https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md"
+"Changelog" = "https://github.com/RustedBytes/charset-norm/blob/main/CHANGELOG.md"
 "Documentation" = "https://charset-normalizer.readthedocs.io/"
-"Code" = "https://github.com/jawah/charset_normalizer"
-"Issue tracker" = "https://github.com/jawah/charset_normalizer/issues"
+"Code" = "https://github.com/RustedBytes/charset-norm"
+"Issue tracker" = "https://github.com/RustedBytes/charset-norm/issues"
 
 [tool.pytest.ini_options]
 log_level = "DEBUG"

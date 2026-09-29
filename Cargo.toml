@@ -1,12 +1,12 @@
 [package]
-name = "charset-normalizer"
+name = "charset-norm"
 version = "3.5.1"
 edition = "2021"
 rust-version = "1.83"
 license = "MIT"
-description = "Native core for the charset-normalizer Python package"
-homepage = "https://github.com/jawah/charset_normalizer"
-repository = "https://github.com/jawah/charset_normalizer"
+description = "Native core for the charset-norm Python package"
+homepage = "https://github.com/RustedBytes/charset-norm"
+repository = "https://github.com/RustedBytes/charset-norm"
 documentation = "https://charset-normalizer.readthedocs.io/"
 publish = false
 

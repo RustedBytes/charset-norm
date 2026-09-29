@@ -37,7 +37,7 @@ It is most likely because you altered the root getLogger instance. The package h
 it is useful. See https://docs.python.org/3/howto/logging.html to learn the basics.
 
 If you are looking to silence and/or reduce drastically the amount of logs, please upgrade to the latest version
-available for `charset-normalizer` using your package manager or by `pip install charset-normalizer -U`.
+available for `charset-normalizer` using your package manager or by `pip install charset-norm -U`.
 
 The latest version will no longer produce any entry greater than `DEBUG`.
 On `DEBUG` only one entry will be observed and that is about the detection result.

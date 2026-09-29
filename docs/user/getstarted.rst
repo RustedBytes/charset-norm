@@ -9,19 +9,19 @@ Using PIP
 ---------
 Charset Normalizer can be installed from pip::
 
-    pip install charset-normalizer
+    pip install charset-norm
 
 You may retrieve the latest unicodedata backport as follow::
 
-    pip install charset-normalizer[unicode_backport]
+    pip install charset-norm[unicode_backport]
 
-From git via master
------------------------
-You can install from dev-master branch using git::
+From git via main
+-----------------
+You can install from the main branch using git (requires Rust 1.83 or newer)::
 
-    git clone https://github.com/Ousret/charset_normalizer.git
-    cd charset_normalizer/
-    python setup.py install
+    git clone https://github.com/RustedBytes/charset-norm.git
+    cd charset-norm/
+    python -m pip install .
 
 Basic Usage
 ===========

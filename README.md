@@ -1,273 +1,57 @@
-<h1 align="center">Charset Detection, for Everyone 👋</h1>
+# charset-norm
 
-<p align="center">
-  <sup>The Real First Universal Charset Detector</sup><br>
-  <a href="https://pypi.org/project/charset-normalizer">
-    <img src="https://img.shields.io/pypi/pyversions/charset_normalizer.svg?orange=blue" />
-  </a>
-  <a href="https://pepy.tech/project/charset-normalizer/">
-    <img alt="Download Count Total" src="https://static.pepy.tech/badge/charset-normalizer/month" />
-  </a>
-  <a href="https://bestpractices.coreinfrastructure.org/projects/7297">
-    <img src="https://bestpractices.coreinfrastructure.org/projects/7297/badge">
-  </a>
-</p>
-<p align="center">
-  <sup><i>Featured Packages</i></sup><br>
-  <a href="https://github.com/jawah/niquests">
-   <img alt="Static Badge" src="https://img.shields.io/badge/Niquests-Most_Advanced_HTTP_Client-cyan">
-  </a>
-  <a href="https://github.com/jawah/wassima">
-   <img alt="Static Badge" src="https://img.shields.io/badge/Wassima-Certifi_Replacement-cyan">
-  </a>
-</p>
-<p align="center">
-  <sup><i>In other language (unofficial port - by the community)</i></sup><br>
-  <a href="https://github.com/nickspring/charset-normalizer-rs">
-   <img alt="Static Badge" src="https://img.shields.io/badge/Rust-red">
-  </a>
-</p>
+A Rust rewrite of [charset_normalizer](https://github.com/jawah/charset_normalizer),
+the universal charset detector for Python.
 
-> A library that helps you read text from an unknown charset encoding.<br /> Motivated by `chardet`,
-> I'm trying to resolve the issue by taking a new approach.
-> All IANA character set names for which the Python core library provides codecs are supported.
-> You can also register your own set of codecs, and yes, it would work as-is.
+The detection core (codecs, Unicode tables, mess and coherence analysis) is
+implemented in Rust and exposed through PyO3, while the Python package keeps the
+original `charset_normalizer` import path and API.
 
-This project offers you an alternative to **Universal Charset Encoding Detector**, also known as **Chardet**.
+## Installation
 
-| Feature                                          | [Chardet](https://github.com/chardet/chardet) |                                       Charset Normalizer                                        | [cChardet](https://github.com/PyYoshi/cChardet) |
-|--------------------------------------------------|:---------------------------------------------:|:-----------------------------------------------------------------------------------------------:|:-----------------------------------------------:|
-| `Fast`                                           |                       ✅                       |                                                ✅                                                |                        ✅                        |
-| `Fast on large content (uncapped)`               |                       ❌                       |                                                ✅                                                |                        ❌                        |
-| `Universal`[^1]                                  |                       ❌                       |                                                ✅                                                |                        ❌                        |
-| `Reliable` **without** distinguishable standards |                       ✅                       |                                                ✅                                                |                        ✅                        |
-| `Reliable` **with** distinguishable standards    |                       ✅                       |                                                ✅                                                |                        ✅                        |
-| `License`                                        |           _0BSD_[^2]<br>_disputed_            |                                               MIT                                               |            MPL-1.1<br>_restrictive_             |
-| `Native Python`                                  |                       ✅                       |                                                ✅                                                |                        ❌                        |
-| `Detect spoken language`                         |                       ✅                       |                                                ✅                                                |                       N/A                       |
-| `UnicodeDecodeError Safety`                      |                       ❌                       |                                                ✅                                                |                        ❌                        |
-| `Whl Size`                                       |                   ~1200 kB                    |                                             ~250 kB                                             |                     ~200 kB                     |
-| `Supported Encoding`                             |                      99                       | [99](https://charset-normalizer.readthedocs.io/en/latest/user/support.html#supported-encodings) |                       40                        |
-| `Can register custom encoding`                   |                       ❌                       |                                                ✅                                                |                        ❌                        |
+The distribution is named `charset-norm` and provides the `charset_normalizer`
+module, so do not install it alongside the original `charset-normalizer`.
 
-<p align="center">
-<img src="https://i.imgflip.com/373iay.gif" alt="Reading Normalized Text" width="226"/><img src="https://media.tenor.com/images/c0180f70732a18b4965448d33adba3d0/tenor.gif" alt="Cat Reading Text" width="200"/>
-</p>
-
-[^1]: They are clearly using specific code for a specific encoding even if covering most of them.
-[^2]: Chardet 7 replaced the historical LGPL-licensed implementation with an AI-assisted rewrite, initially distributed under MIT and later under 0BSD. The original author [contests](https://github.com/chardet/chardet/issues/327) that the rewrite was sufficiently independent to permit relicensing, while Chardet's maintainer maintains that it is a new, non-derivative implementation. A separate [discussion](https://github.com/chardet/chardet/issues/334) raises questions about copyright ownership and licensing of substantially AI-generated code. Neither unresolved question is presented here as settled law. The concern is broader than whether ideas, APIs, or observable behavior are copyrightable. Independent implementations are essential to open-source competition. The ethical question is whether a maintainer with extensive access to a reciprocal project's source, architecture, tests, behavior, community, and reputation can use an LLM to recreate the same product under the same package identity, then treat the generated implementation as a provenance reset that extinguishes the project's reciprocal licensing obligations and contributor expectations. Responsible AI use in open source requires more than producing text that differs from the historical source: it requires transparent provenance, respect for project lineage, meaningful attribution, accountable human review, and consideration for the social agreement under which earlier contributors participated. If automated rewriting becomes an accepted way to retain a project's name, users, and accumulated reputation while discarding its reciprocal license, it risks weakening the trust and incentives on which FOSS depends. Early Chardet 7.x development and evaluation also incorporated files originating from charset-normalizer's test corpus. Results measured on data that influenced implementation or model development are not independent validation. Charset-normalizer has been MIT-licensed since inception and originates from a continuous human-designed, encoding-agnostic project history. AI assistance may be used, but every proposed change remains subject to maintainer review, adjustment, testing, and accountability; AI is an engineering aid, not a mechanism for erasing provenance or project lineage. An attentive eye will see that some aspects lead by us are magically found in Chardet.
-
-## ⚡ Performance
-
-This package offer similar performances in general against Chardet. Expect 10X faster with large contents when you uncap Chardet max_bytes default assumption.
-
-| Package            | Accuracy |  Mean per file (ms)   |
-|--------------------|:--------:|:---------------------:|
-| Chardet            |   99 %   | 0.4 ms[^4] 0.6 ms[^5] |
-| charset-normalizer |   98 %   |        0.4 ms         |
-| cchardet[^3]       |   94 %   |        0.6 ms         |
-
-_Well, sub-ms detectors made them extremely discrete in the overall runtime.
-Competitors can still win individual measurements, especially capped Chardet on
-small-file median latency. But when performance, accuracy, binary handling, validation
-strength, portability, and maintainability are considered together, charset-normalizer
-is the stronger package._
-
-| Package            |   99th percentile    | 95th percentile | 50th percentile |
-|--------------------|:--------------------:|:---------------:|:---------------:|
-| Chardet            | 2.5 ms[^4] 4.2ms[^5] |      1 ms       |     0.2 ms      |
-| charset-normalizer |        2.7 ms        |     1.5 ms      |     0.2 ms      |
-| cchardet           |        2.7 ms        |      2 ms       |     0.3 ms      |
-
-_updated as of August 2026 using CPython 3.12, Charset-Normalizer 3.5.1, and Chardet 7.5 inside a (libc Debian) container. The host CPU is a 13th gen Intel mobile CPU. We'll no longer update regularly those since the sub-ms changes aren't meaningful to anyone anymore._
-
-> Stats are generated using 477 files using default parameters. More details on used files, see GHA workflows.
-> And yes, these results might change at any time. The dataset can be updated to include more files.
-> The actual delays heavily depends on your CPU capabilities. The factors should remain the same.
-> Chardet claims on his documentation to have a greater accuracy than us based on the dataset they trained Chardet on(...)
-> Whereas charset-normalizer don't train on anything, our solution is based on a completely different algorithm, still heuristic
-> through, it does not need weights across every encoding tables.
-
-[^3]: cchardet main repository/package was discontinued. we're relying on a known fork namely faust-cchardet. the idea remained the same: uchardet bindings.
-[^4]: Chardet does not feed the complete body but rather a limited part of it, because the algorithm doesn't scale properly with larger samples. Feeding the whole content slow things to 0.8 ms (from the 0.5ms avg). While we do not skip content in order for us to guarantee a usable result each and every time. We attempted to feed a 272 MiB UTF-8 (Reddit archive on comments/posts) file in Chardet uncapped and waited 3.4s while Charset-Normalizer took 0.3s, this is a 10-fold speedup.
-[^5]: Uncapped max_bytes (no truncating of content)
-
-## ✨ Installation
-
-Using pip:
+Requires Python 3.8+ and, when building from source, Rust 1.83+.
 
 ```sh
-pip install charset-normalizer -U
+pip install git+https://github.com/RustedBytes/charset-norm.git
 ```
 
-Python 3.8 or newer is required. Binary wheels include the Rust/PyO3 core;
-building from source requires Rust 1.83 or newer.
+## Usage
 
-## 🚀 Basic Usage
-
-### CLI
-This package comes with a CLI.
-
-```
-usage: normalizer [-h] [-v] [-a] [-n] [-m] [-r] [-f] [-t THRESHOLD]
-                  file [file ...]
-
-The Real First Universal Charset Detector. Discover originating encoding used
-on text file. Normalize text to unicode.
-
-positional arguments:
-  files                 File(s) to be analysed
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -v, --verbose         Display complementary information about file if any.
-                        Stdout will contain logs about the detection process.
-  -a, --with-alternative
-                        Output complementary possibilities if any. Top-level
-                        JSON WILL be a list.
-  -n, --normalize       Permit to normalize input file. If not set, program
-                        does not write anything.
-  -m, --minimal         Only output the charset detected to STDOUT. Disabling
-                        JSON output.
-  -r, --replace         Replace file when trying to normalize it instead of
-                        creating a new one.
-  -f, --force           Replace file without asking if you are sure, use this
-                        flag with caution.
-  -t THRESHOLD, --threshold THRESHOLD
-                        Define a custom maximum amount of chaos allowed in
-                        decoded content. 0. <= chaos <= 1.
-  --version             Show version information and exit.
-```
-
-```bash
-normalizer ./data/sample.1.fr.srt
-```
-
-or
-
-```bash
-python -m charset_normalizer ./data/sample.1.fr.srt
-```
-
-🎉 Since version 1.4.0 the CLI produce easily usable stdout result in JSON format.
-
-```json
-{
-    "path": "/home/default/projects/charset_normalizer/data/sample.1.fr.srt",
-    "encoding": "cp1252",
-    "encoding_aliases": [
-        "1252",
-        "windows_1252"
-    ],
-    "alternative_encodings": [
-        "cp1254",
-        "cp1256",
-        "cp1258",
-        "iso8859_14",
-        "iso8859_15",
-        "iso8859_16",
-        "iso8859_3",
-        "iso8859_9",
-        "latin_1",
-        "mbcs"
-    ],
-    "language": "French",
-    "alphabets": [
-        "Basic Latin",
-        "Latin-1 Supplement"
-    ],
-    "has_sig_or_bom": false,
-    "chaos": 0.149,
-    "coherence": 97.152,
-    "unicode_path": null,
-    "is_preferred": true
-}
-```
-
-### Python
-*Just print out normalized text*
 ```python
-from charset_normalizer import from_path
+from charset_normalizer import from_bytes, from_path
 
-results = from_path("./my_subtitle.srt")
+best = from_path("./my_subtitle.srt").best()
+print(best.encoding, str(best))
 
-print(str(results.best()))
+payload = "Всеки човек има право на образование.".encode("cp1251")
+print(from_bytes(payload).best().encoding)  # cp1251
 ```
 
-*Upgrade your code without effort*
+A chardet-compatible `detect()` is also available:
+
 ```python
 from charset_normalizer import detect
 ```
 
-The above code will behave the same as **chardet**. We ensure that we offer the best (reasonable) BC result possible.
+Command line:
 
-See the docs for advanced usage : [readthedocs.io](https://charset-normalizer.readthedocs.io/en/latest/)
+```sh
+normalizer ./data/sample-french.txt
+```
 
-## 😇 Why
+## Development
 
-When I started using Chardet, I noticed that it was not suited to my expectations, and I wanted to propose a
-reliable alternative using a completely different method. Also! I never back down on a good challenge!
+```sh
+pip install maturin
+maturin develop --release
+pip install --group dev
+pytest
+```
 
-I **don't care** about the **originating charset** encoding, because **two different tables** can
-produce **two identical rendered string.**
-What I want is to get readable text, the best I can.
+## License
 
-In a way, **I'm brute forcing text decoding.** How cool is that ? 😎
-
-Don't confuse package **ftfy** with charset-normalizer or chardet. ftfy goal is to repair Unicode string whereas charset-normalizer to convert raw file in unknown encoding to unicode.
-
-## 🍰 How
-
-  - Discard all charset encoding table that could not fit the binary content.
-  - Measure noise, or the mess once opened (by chunks) with a corresponding charset encoding.
-  - Extract matches with the lowest mess detected.
-  - Additionally, we measure coherence / probe for a language.
-
-**Wait a minute**, what is noise/mess and coherence according to **YOU ?**
-
-*Noise :* I opened hundred of text files, **written by humans**, with the wrong encoding table. **I observed**, then
-**I established** some ground rules about **what is obvious** when **it seems like** a mess (aka. defining noise in rendered text).
- I know that my interpretation of what is noise is probably incomplete, feel free to contribute in order to
- improve or rewrite it.
-
-*Coherence :* For each language there is on earth, we have computed ranked letter appearance occurrences (the best we can). So I thought
-that intel is worth something here. So I use those records against decoded text to check if I can detect intelligent design.
-
-## ⚡ Known limitations
-
-  - Language detection is unreliable when text contains two or more languages sharing identical letters. (eg. HTML (english tags) + Turkish content (Sharing Latin characters))
-  - Every charset detector heavily depends on sufficient content. In common cases, do not bother run detection on very tiny content.
-
-## ⚠️ About Python EOLs
-
-**If you are running:**
-
-- Python >=2.7,<3.5: Unsupported
-- Python 3.5: charset-normalizer < 2.1
-- Python 3.6: charset-normalizer < 3.1
-
-Upgrade your Python interpreter as soon as possible.
-
-## 👤 Contributing
-
-Contributions, issues and feature requests are very much welcome.<br />
-Feel free to check [issues page](https://github.com/ousret/charset_normalizer/issues) if you want to contribute.
-
-## 📝 License
-
-Copyright © [Ahmed TAHRI @Ousret](https://github.com/Ousret).<br />
-This project is [MIT](https://github.com/Ousret/charset_normalizer/blob/master/LICENSE) licensed.
-
-Characters frequencies used in this project © 2012 [Denny Vrandečić](http://simia.net/letters/)
-
-## 💼 For Enterprise
-
-Professional support for charset-normalizer is available as part of the [Tidelift
-Subscription][1]. Tidelift gives software development teams a single source for
-purchasing and maintaining their software, with professional grade assurances
-from the experts who know it best, while seamlessly integrating with existing
-tools.
-
-[1]: https://tidelift.com/subscription/pkg/pypi-charset-normalizer?utm_source=pypi-charset-normalizer&utm_medium=readme
-
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/7297/badge)](https://www.bestpractices.dev/projects/7297)
+MIT. Based on [charset_normalizer](https://github.com/jawah/charset_normalizer)
+by Ahmed TAHRI ([@Ousret](https://github.com/Ousret)).
