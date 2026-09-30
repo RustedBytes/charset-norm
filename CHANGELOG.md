@@ -2,7 +2,12 @@
 All notable changes to charset-normalizer will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## [4.0.0](https://github.com/RustedBytes/charset-norm/releases/tag/v4.0.0) (2026-09-30)
+
+### Added
+- Prebuilt wheels on PyPI for Linux (x86_64, arm64), Windows and macOS (arm64):
+  CPython 3.8+ (``abi3``), free-threaded CPython 3.14 and PyPy 3.11/3.12.
+- Rust API documentation for docs.rs, with runnable examples.
 
 ### Changed
 
@@ -45,6 +50,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   instructions per detection than the system allocator with thin LTO).
 - ``CharsetMatch.fingerprint`` is now a stable hash of the decoded text instead of
   the process-salted ``hash(str)``.
+- ``constant.IANA_SUPPORTED`` no longer depends on the running interpreter
+  (Python 3.15 added aliases that introduced ``utf_8_sig`` and duplicates).
+
+### Removed
+- The unused pure-Python mess detector plugins (``MessDetectorPlugin`` and its
+  subclasses) from ``charset_norm.md``; ``mess_ratio`` has used the native
+  implementation since the Rust rewrite.
 
 ### Fixed
 - Chunk re-alignment no longer panics on multi-byte payloads whose signature is

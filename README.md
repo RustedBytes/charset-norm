@@ -66,7 +66,7 @@ normalizer ./data/sample-french.txt
 
 ```toml
 [dependencies]
-charset-norm = "3.5"
+charset-norm = "4.0"
 ```
 
 ```rust

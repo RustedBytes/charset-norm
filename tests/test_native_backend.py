@@ -32,7 +32,7 @@ from charset_norm.utils import (
 
 def test_native_backend_is_required() -> None:
     assert _native.backend_name() == "rust-pyo3"
-    assert _native.__version__ == "3.5.1"
+    assert _native.__version__ == "4.0.0"
     best = _native.from_bytes(b"plain ASCII").best()
     assert best is not None
     assert best.encoding == "ascii"
