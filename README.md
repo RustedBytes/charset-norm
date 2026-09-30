@@ -1,5 +1,10 @@
 # charset-norm
 
+[![PyPI - Version](https://img.shields.io/pypi/v/charset-norm)](https://pypi.org/project/charset-norm/)
+[![Crates.io Version](https://img.shields.io/crates/v/charset-norm)](https://crates.io/crates/charset-norm)
+[![CI](https://github.com/RustedBytes/charset-norm/actions/workflows/ci.yml/badge.svg)](https://github.com/RustedBytes/charset-norm/actions/workflows/ci.yml)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/charset-norm?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/charset-norm)
+
 A Rust rewrite of [charset_normalizer](https://github.com/jawah/charset_normalizer),
 the universal charset detector for Python.
 
@@ -17,6 +22,17 @@ charset_normalizer API.
 ## Installation
 
 Requires Python 3.8+ and, when building from source, Rust 1.98+.
+
+```sh
+pip install charset-norm
+
+# or using uv
+uv add charset-norm
+```
+
+Prebuilt wheels cover Linux (x86_64, arm64), Windows and macOS (arm64) for
+CPython 3.8+ (abi3), free-threaded CPython 3.14 and PyPy 3.11/3.12. Other
+platforms build from the source distribution. To install the latest code:
 
 ```sh
 pip install git+https://github.com/RustedBytes/charset-norm.git

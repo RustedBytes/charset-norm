@@ -1,0 +1,73 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to bump to (e.g., 3.5.2, 4.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate version format
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if ! echo "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
+            echo "Error: Version must be in format X.Y.Z or X.Y.Z-suffix (e.g., 3.5.2 or 4.0.0-alpha1)"
+            exit 1
+          fi
+
+      - name: Update version in Cargo.toml files
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          sed -i "s/^\(charset-norm = {.*version = \"=\)[^\"]*\"/\1${VERSION}\"/" crates/charset-norm-python/Cargo.toml
+
+      - name: Update version in pyproject.toml
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+
+      - name: Update version in tests
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          sed -i "s/_native.__version__ == \".*\"/_native.__version__ == \"${VERSION}\"/" tests/test_native_backend.py
+
+      - name: Update Cargo.lock
+        run: |
+          cargo update -p charset-norm -p charset-norm-python
+
+      - name: Commit version changes
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          git add Cargo.toml crates/charset-norm-python/Cargo.toml pyproject.toml tests/test_native_backend.py Cargo.lock
+          if git diff --staged --quiet; then
+            echo "No changes to commit, version is already ${VERSION}"
+          else
+            git commit -m "Bump version to ${VERSION}"
+          fi
+          git push origin HEAD
