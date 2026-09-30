@@ -817,10 +817,17 @@ IANA_NO_ALIASES = [
     "koi8_u",
 ]
 
+# This list must not depend on the interpreter: the native tables are fixed.
+# Python 3.15 added aliases for some IANA_NO_ALIASES entries (hence the set)
+# and made utf_8_sig an alias target. utf_8_sig is not a candidate of its own:
+# a UTF-8 signature is detected as utf_8 with a BOM.
 IANA_SUPPORTED: list[str] = sorted(
     filter(
-        lambda x: not x.endswith("_codec") and x not in {"rot_13", "tactis", "mbcs"},
-        list(set(aliases.values())) + IANA_NO_ALIASES,
+        lambda x: (
+            not x.endswith("_codec")
+            and x not in {"rot_13", "tactis", "mbcs", "utf_8_sig"}
+        ),
+        set(aliases.values()) | set(IANA_NO_ALIASES),
     )
 )
 

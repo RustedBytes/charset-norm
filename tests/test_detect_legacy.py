@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+import pytest
+
 from charset_norm.legacy import detect
 
 
@@ -72,3 +74,17 @@ class TestDetectLegacy(unittest.TestCase):
             r = detect("#表 10-1 クラスタ設定　…　リソース同居制約".encode("cp932"))
 
             self.assertTrue(r["confidence"] == 1.0)
+
+
+def test_detect_warns_about_unsupported_arguments():
+    with pytest.warns(UserWarning, match="disregard arguments 'foo'"):
+        detect(b"hello world", foo=True)
+
+
+def test_detect_accepts_bytearray():
+    assert detect(bytearray(b"hello world"))["encoding"] == "ascii"
+
+
+def test_detect_rejects_str():
+    with pytest.raises(TypeError):
+        detect("hello world")  # type: ignore[arg-type]

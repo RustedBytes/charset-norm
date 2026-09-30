@@ -85,6 +85,28 @@ def test_semantic_character_information(character, property_name):
 
 
 @pytest.mark.parametrize(
+    "character, expected",
+    [
+        ("A", {"alpha": True, "upper": True, "latin": True, "case_variable": True}),
+        ("z", {"alpha": True, "lower": True, "latin": True, "case_variable": True}),
+        ("7", {"digit": True, "alpha": False, "latin": False}),
+        (" ", {"space": True, "printable": True, "sep": True}),
+        ("\n", {"space": True, "printable": False}),
+        ("!", {"punct": True, "sym": False, "alpha": False}),
+        ("+", {"sym": True, "punct": False}),
+        ("\x00", {"printable": False, "punct": False, "sym": False}),
+        ("é", {"accentuated": True, "latin": True, "unaccented": "e"}),
+        ("\u200b", {"printable": False, "punct": False, "sym": False}),
+    ],
+)
+def test_character_information(character, expected):
+    info = _char_info(character)
+    assert info.is_ascii is character.isascii()
+    for name, value in expected.items():
+        assert getattr(info, name) == value, name
+
+
+@pytest.mark.parametrize(
     "range_a, range_b",
     [
         ("CJK Unified Ideographs", "Bopomofo"),

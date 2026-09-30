@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
+import tempfile
 import unittest
-from contextlib import suppress
+from contextlib import redirect_stderr, suppress
 from os import pardir, path, remove
 from os.path import exists
 from unittest.mock import patch
@@ -177,6 +179,22 @@ class TestCommandLineInterface(unittest.TestCase):
         self.assertEqual(
             cli_detect([DIR_PATH + "/data/sample-arabic-1.txt", "--replace"]), 1
         )
+
+    def test_threshold_out_of_range(self):
+        self.assertEqual(
+            cli_detect([DIR_PATH + "/data/sample-arabic-1.txt", "--threshold", "1.5"]),
+            1,
+        )
+
+    def test_undetectable_file(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as fp:
+            fp.write(bytes(range(256)) * 8)
+        try:
+            with redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(cli_detect([fp.name]), 0)
+            self.assertIn("Unable to identify originating encoding", err.getvalue())
+        finally:
+            remove(fp.name)
 
     def test_force_replace_without_replace(self):
         self.assertEqual(

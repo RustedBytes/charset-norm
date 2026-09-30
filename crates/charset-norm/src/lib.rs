@@ -4,7 +4,7 @@
 //! [charset_normalizer](https://github.com/jawah/charset_normalizer). Give it
 //! bytes of unknown origin and it tells you which encodings they were
 //! plausibly written in, which language the text is in, and how confident it
-//! is. It knows 99 code pages, from UTF-8 and the Windows/ISO-8859 families to
+//! is. It knows 98 code pages, from UTF-8 and the Windows/ISO-8859 families to
 //! the CJK and ISO-2022 encodings.
 //!
 //! Decoding reproduces `CPython`'s codecs byte for byte, so verdicts agree with

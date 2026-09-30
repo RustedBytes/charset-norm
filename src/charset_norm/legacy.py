@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def detect(
-    byte_str: bytes, should_rename_legacy: bool = False, **kwargs: Any
+    byte_str: bytes | bytearray, should_rename_legacy: bool = False, **kwargs: Any
 ) -> ResultDict:
     """
     chardet legacy method

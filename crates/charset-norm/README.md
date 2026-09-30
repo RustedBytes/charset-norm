@@ -6,7 +6,7 @@ Universal character encoding detector for Rust: a Rust implementation of
 It decodes a payload with every supported code page, measures how noisy each
 result looks (*chaos*) and how well it matches known languages (*coherence*),
 and ranks the plausible encodings. Decoding reproduces CPython's codecs byte
-for byte (99 code pages, including the CJK and ISO-2022 families), so results
+for byte (98 code pages, including the CJK and ISO-2022 families), so results
 agree with the Python package.
 
 ## Usage

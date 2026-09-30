@@ -17,6 +17,7 @@ reference: ``python bin/generate_native_tables.py``.
 from __future__ import annotations
 
 import codecs
+import importlib.machinery
 import importlib.util
 import struct
 import sys
@@ -32,7 +33,8 @@ OUT = ROOT / "crates" / "charset-norm" / "src" / "generated"
 _spec = importlib.util.spec_from_file_location(
     "cn_constant", ROOT / "src" / "charset_norm" / "constant.py"
 )
-assert _spec is not None and _spec.loader is not None
+assert _spec is not None
+assert isinstance(_spec.loader, importlib.machinery.SourceFileLoader)
 constant = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(constant)
 

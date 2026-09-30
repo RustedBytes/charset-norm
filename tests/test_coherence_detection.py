@@ -5,10 +5,12 @@ import pytest
 from charset_norm.cd import (
     characters_popularity_compare,
     encoding_languages,
+    encoding_unicode_range,
     filter_alt_coherence_matches,
     get_target_features,
     is_multi_byte_encoding,
     mb_encoding_languages,
+    unicode_range_languages,
 )
 
 
@@ -111,3 +113,11 @@ def test_filter_alt_coherence_matches(matches, expected_return):
     results = filter_alt_coherence_matches(matches)
 
     assert results == expected_return
+
+
+def test_encoding_unicode_range():
+    assert "Cyrillic" in encoding_unicode_range("cp1251")
+
+
+def test_unicode_range_languages():
+    assert "Russian" in unicode_range_languages("Cyrillic")
