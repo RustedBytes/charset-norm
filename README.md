@@ -21,7 +21,7 @@ charset_normalizer API.
 
 ## Installation
 
-Requires Python 3.8+ and, when building from source, Rust 1.98+.
+Requires Python 3.9+ and, when building from source, Rust 1.98+.
 
 ```sh
 pip install charset-norm
@@ -31,7 +31,7 @@ uv add charset-norm
 ```
 
 Prebuilt wheels cover Linux (x86_64, arm64), Windows and macOS (arm64) for
-CPython 3.8+ (abi3), free-threaded CPython 3.14 and PyPy 3.11/3.12. Other
+CPython 3.9+ (abi3), free-threaded CPython 3.14 and PyPy 3.11/3.12. Other
 platforms build from the source distribution. To install the latest code:
 
 ```sh

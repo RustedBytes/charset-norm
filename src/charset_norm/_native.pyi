@@ -1,4 +1,5 @@
-from typing import Any, Iterator, Sequence, overload
+from collections.abc import Iterator, Sequence
+from typing import Any, overload
 
 __version__: str
 

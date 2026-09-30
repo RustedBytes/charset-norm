@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
-from typing import Generator
+from collections.abc import Generator
+from functools import cache
 
 from . import _native
 from .constant import (
@@ -106,7 +106,7 @@ def any_specified_encoding(
     return _native.any_specified_encoding(sequence, search_zone)
 
 
-@lru_cache(maxsize=None)
+@cache
 def is_multi_byte_encoding(name: str) -> bool:
     return _native.is_multi_byte_encoding(name)
 

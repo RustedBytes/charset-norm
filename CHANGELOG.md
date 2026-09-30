@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Prebuilt wheels on PyPI for Linux (x86_64, arm64), Windows and macOS (arm64):
-  CPython 3.8+ (``abi3``), free-threaded CPython 3.14 and PyPy 3.11/3.12.
+  CPython 3.9+ (``abi3``), free-threaded CPython 3.14 and PyPy 3.11/3.12.
 - Rust API documentation for docs.rs, with runnable examples.
 
 ### Changed
@@ -21,8 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   ``logging.getLogger("charset_norm")``.
 - Replaced the Cython build with a required Rust/PyO3 ``abi3`` extension while
   preserving the Python import and call surface.
-- Raised the minimum supported Python version to 3.8 and limited binary
-  distributions to mainstream CPython desktop/server platforms.
+- Raised the minimum supported Python version to 3.9 (the PyO3 fix needed for
+  PyPy 3.12 has dropped 3.8) and limited binary distributions to mainstream
+  desktop/server platforms.
+- PyO3's FFI crates are pinned to an upstream git revision carrying the PyPy
+  3.12 symbol mapping fix (PyO3/pyo3#6448) until it ships in a release.
 - The Rust core no longer calls back into Python while detecting: character
   properties come from the ``unicode_names2``, ``unicode-general-category`` and
   ``unicode-normalization`` crates, pattern matching from ``regex``, and every

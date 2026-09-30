@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 
 from . import _native
 from .constant import (
@@ -237,13 +237,13 @@ class CharInfo:
 
 # Per-codepoint cache of CharInfo instances
 # At most UTF-8 size allocated.
-@lru_cache(maxsize=None)
+@cache
 def _char_info(character: str) -> CharInfo:
     """Build (once per codepoint) and cache the CharInfo for *character*."""
     return CharInfo(character)
 
 
-@lru_cache(maxsize=None)
+@cache
 def is_suspiciously_successive_range(
     unicode_range_a: str | None, unicode_range_b: str | None
 ) -> bool:

@@ -54,7 +54,6 @@ def test_impl(
 
 @nox.session(
     python=[
-        "3.8",
         "3.9",
         "3.10",
         "3.11",
@@ -76,8 +75,7 @@ def git_clone(session: nox.Session, git_url: str) -> None:
     """
     expected_directory = git_url.split("/")[-1]
 
-    if expected_directory.endswith(".git"):
-        expected_directory = expected_directory[:-4]
+    expected_directory = expected_directory.removesuffix(".git")
 
     if not os.path.isdir(expected_directory):
         session.run("git", "clone", "--depth", "1", git_url, external=True)

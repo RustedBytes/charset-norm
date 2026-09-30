@@ -72,8 +72,8 @@ jobs:
 
           for wheel in "${wheels[@]}"; do
             name="$(basename "$wheel")"
-            if [[ "$name" != *-cp38-abi3-* ]]; then
-              echo "Expected a cp38-abi3 wheel, got: $name" >&2
+            if [[ "$name" != *-cp39-abi3-* ]]; then
+              echo "Expected a cp39-abi3 wheel, got: $name" >&2
               exit 1
             fi
           done

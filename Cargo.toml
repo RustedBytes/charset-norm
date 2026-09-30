@@ -22,6 +22,13 @@ pedantic = { level = "warn", priority = -1 }
 # the conversion is exact.
 cast_precision_loss = "allow"
 
+# PyPy 3.12 changed its C-extension symbol mapping. Pin PyO3's upstream
+# compatibility patch until it is included in a crates.io release.
+# https://github.com/PyO3/pyo3/pull/6448
+[patch.crates-io]
+pyo3-build-config = { git = "https://github.com/PyO3/pyo3", rev = "dd54cd6e129439ab2c5d98ff11f06f1e0ea85cd6" }
+pyo3-ffi = { git = "https://github.com/PyO3/pyo3", rev = "dd54cd6e129439ab2c5d98ff11f06f1e0ea85cd6" }
+
 # Wheels are built with this profile: whole-program optimisation in a single
 # codegen unit. Unwinding stays enabled so PyO3 can turn panics into exceptions.
 [profile.release]
