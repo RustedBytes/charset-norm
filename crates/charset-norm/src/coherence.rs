@@ -1,4 +1,23 @@
 //! Language coherence: how well decoded text matches known letter frequencies.
+//!
+//! Every supported language has a profile of its letters ordered from most to
+//! least frequent (see [`languages`]). [`coherence_ratio`] ranks the
+//! languages a text is plausibly written in by comparing the text's own
+//! letter ranking against those profiles; the result feeds
+//! [`CharsetMatch::languages`](crate::CharsetMatch::languages).
+//!
+//! Coherence is a statistical signal: it needs a few sentences to be
+//! reliable, and closely related languages can swap places on short texts.
+//!
+//! ```
+//! use charset_norm::coherence;
+//!
+//! assert!(coherence::languages().any(|name| name == "Ukrainian"));
+//!
+//! let text = "Der schnelle braune Fuchs springt über den faulen Hund und läuft weit weg.";
+//! let ranked = coherence::coherence_ratio(text, 0.1, None).unwrap();
+//! assert!(ranked.iter().any(|&(language, _)| language == "German"));
+//! ```
 
 use rustc_hash::FxHashMap;
 

@@ -1,4 +1,22 @@
 //! Mess (noise) detection: how implausible decoded text looks.
+//!
+//! Decoding bytes with the wrong code page rarely fails outright; it produces
+//! text that *looks* wrong: letters from unrelated scripts side by side,
+//! accents in odd places, unprintable characters, symbols in the middle of
+//! words. [`mess_ratio`] runs a set of such detectors over decoded text and
+//! sums their scores into the *chaos* reported by
+//! [`CharsetMatch::chaos`](crate::CharsetMatch::chaos).
+//!
+//! ```
+//! use charset_norm::mess::mess_ratio;
+//!
+//! // Clean text scores zero.
+//! assert_eq!(mess_ratio("Ceci est un texte parfaitement normal.", 1.0), 0.0);
+//!
+//! // UTF-8 bytes read as cp1252 ("mojibake") are noisy.
+//! let mojibake = "CafÃ© crÃ¨me, dÃ©jÃ  vu, Ã  la faÃ§on de chez nous.";
+//! assert!(mess_ratio(mojibake, 1.0) > 0.2);
+//! ```
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -526,6 +544,9 @@ pub fn mess_ratio(decoded_sequence: &str, maximum_threshold: f64) -> f64 {
 }
 
 /// [`mess_ratio`], optionally tracing the per-detector breakdown to `logger`.
+///
+/// With `debug` set, the score of each detector is logged at
+/// [`Level::Trace`] once analysis ends.
 pub fn mess_ratio_with(
     decoded_sequence: &str,
     maximum_threshold: f64,

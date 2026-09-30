@@ -1,4 +1,5 @@
-//! Detection results.
+//! Detection results: [`CharsetMatches`] and [`CharsetMatch`], re-exported at
+//! the crate root.
 
 use std::borrow::Cow;
 use std::hash::{DefaultHasher, Hasher};
@@ -9,6 +10,36 @@ use crate::encoding::{self, encoding_indication};
 use crate::{Error, TOO_BIG_SEQUENCE, pyfloat, unicode};
 
 /// One plausible encoding for a payload.
+///
+/// A match holds the analysed payload, the encoding, and the two scores the
+/// verdict rests on:
+///
+/// - [`chaos`](Self::chaos): how noisy the decoded text looks, from `0.0`
+///   (clean) upward. Lower is better.
+/// - [`coherence`](Self::coherence): how well the text matches the letter
+///   frequencies of its best language, in `[0, 1]`. Higher is better.
+///
+/// The decoded text is computed lazily and cached; cloning a match never
+/// copies the payload or the text.
+///
+/// ```
+/// use charset_norm::codecs;
+///
+/// let text = "Größere Änderungen an der Straßenführung sind für nächste Woche geplant.";
+/// let payload = codecs::encode(text, "cp1252").unwrap();
+///
+/// let results = charset_norm::from_bytes(&payload);
+/// let best = results.best().unwrap();
+///
+/// assert_eq!(best.decoded().unwrap(), text);
+/// assert!(best.chaos() < 0.1);
+/// assert!(best.coherence() > 0.0);
+/// assert!(!best.has_sig_or_bom());
+///
+/// // Code pages that decode these bytes to the very same text are
+/// // reported alongside the best match rather than as separate results.
+/// assert!(best.could_be_from_charset().contains(&"cp1252"));
+/// ```
 #[derive(Clone, Debug)]
 pub struct CharsetMatch {
     payload: Arc<[u8]>,
@@ -220,7 +251,13 @@ impl CharsetMatch {
         Ok(self.alphabets.get_or_init(|| ranges))
     }
 
-    /// Other matches that decode to the very same text.
+    /// Other matches that decode to the very same text with the same chaos.
+    ///
+    /// Many code pages differ only in a few byte values, so a payload that
+    /// avoids those bytes is equally valid in all of them. Such matches are
+    /// grouped under the best-ranked one instead of being listed separately
+    /// in [`CharsetMatches`]; [`could_be_from_charset`](Self::could_be_from_charset)
+    /// lists every encoding of the group.
     pub fn submatches(&self) -> &[CharsetMatch] {
         &self.submatches
     }
@@ -361,7 +398,15 @@ impl CharsetMatch {
     }
 }
 
-/// Why [`CharsetMatch::output`] failed.
+/// Why [`CharsetMatch::output`] or [`CharsetMatch::output_text`] failed.
+///
+/// ```
+/// use charset_norm::OutputError;
+///
+/// let results = charset_norm::from_bytes("plain text".as_bytes());
+/// let best = results.best().unwrap();
+/// assert!(matches!(best.output("no-such-codec"), Err(OutputError::Unsupported(_))));
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum OutputError {
@@ -425,6 +470,27 @@ pub fn sort_by_rank<T>(items: &mut [T], mut lt: impl FnMut(&T, &T) -> bool) {
 }
 
 /// Plausible encodings for a payload, best first.
+///
+/// Returned by [`from_bytes`](crate::from_bytes) and the other detection
+/// functions. [`best`](Self::best) is the verdict; the rest are less likely
+/// alternatives. Empty when no encoding fits, which usually means the payload
+/// is binary.
+///
+/// ```
+/// use charset_norm::codecs;
+///
+/// let payload = codecs::encode("Меня зовут Анна, я живу в Москве и работаю учителем.", "koi8_r").unwrap();
+/// let results = charset_norm::from_bytes(&payload);
+///
+/// assert_eq!(results.best().unwrap().encoding(), "koi8_r");
+///
+/// for candidate in &results {
+///     println!("{}: chaos {:.1}%", candidate.encoding(), candidate.percent_chaos());
+/// }
+///
+/// // Look a match up by any alias of its encoding or of one of its submatches.
+/// assert!(results.get_by_encoding("KOI8-R").is_some());
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct CharsetMatches {
     results: Vec<CharsetMatch>,

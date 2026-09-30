@@ -1,6 +1,19 @@
 use std::fmt;
 
-/// Errors reported by the lookup helpers of this crate.
+/// Errors reported by the lookup helpers of this crate, such as
+/// [`encoding::iana_name`](crate::encoding::iana_name) or
+/// [`coherence::get_target_features`](crate::coherence::get_target_features).
+///
+/// Detection itself never fails: an unusable payload simply yields no match.
+///
+/// ```
+/// use charset_norm::{Error, encoding};
+///
+/// assert_eq!(
+///     encoding::iana_name("klingon-8", true),
+///     Err(Error::UnknownEncoding("klingon_8".to_owned())),
+/// );
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {

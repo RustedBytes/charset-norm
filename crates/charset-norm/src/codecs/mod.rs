@@ -5,7 +5,6 @@
 //! implemented directly, single-byte code pages and CJK codecs are driven by
 //! tables generated from `CPython` (see `bin/generate_native_tables.py`), and
 //! the stateful ISO-2022 / HZ / UTF-7 decoders are ports of `CPython`'s.
-
 //!
 //! Codec names follow `CPython` (`"cp1252"`, `"shift_jis"`, ...); aliases such
 //! as `"windows-1252"` or `"UTF-8"` are accepted too.
@@ -17,6 +16,19 @@
 //! assert_eq!(bytes, b"Gr\xfc\xdfe");
 //! assert_eq!(decode(&bytes, "windows-1252", Errors::Strict).unwrap(), "Grüße");
 //! ```
+//!
+//! Invalid input either fails ([`Errors::Strict`]) or is skipped
+//! ([`Errors::Ignore`]):
+//!
+//! ```
+//! use charset_norm::codecs::{DecodeError, Errors, decode};
+//!
+//! assert_eq!(decode(b"caf\xe9", "utf-8", Errors::Strict), Err(DecodeError::Invalid));
+//! assert_eq!(decode(b"caf\xe9", "utf-8", Errors::Ignore).unwrap(), "caf");
+//! ```
+//!
+//! Every name in [`encoding::supported_encodings`](crate::encoding::supported_encodings)
+//! has a decoder here; [`is_known`] checks any other name.
 
 mod cjk;
 mod iso2022;

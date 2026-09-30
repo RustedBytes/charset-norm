@@ -1,5 +1,19 @@
 //! Character properties computed natively (no `unicodedata` round-trips).
 //!
+//! These are the character classifications the [`mess`](crate::mess) and
+//! [`coherence`](crate::coherence) analyses build on: Unicode blocks, general
+//! categories, accents, scripts.
+//!
+//! ```
+//! use charset_norm::unicode;
+//!
+//! assert_eq!(unicode::category('A'), "Lu");
+//! assert_eq!(unicode::unicode_range('é'), Some("Latin-1 Supplement"));
+//! assert_eq!(unicode::remove_accent('é'), 'e');
+//! assert!(unicode::character_flags('é') & unicode::ACCENTUATED != 0);
+//! assert!(unicode::is_punctuation('¿'));
+//! ```
+//!
 //! Python semantics are reproduced on top of the `unicode_names2`,
 //! `unicode-general-category` and `unicode-normalization` crates. Results
 //! are memoized per code point in a lock-free table, so hot loops pay for

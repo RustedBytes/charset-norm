@@ -1,7 +1,25 @@
 //! Sampling of decoded chunks, the unit the detector measures.
 //!
 //! This is a low-level building block of [`crate::from_bytes`]; most users
-//! do not need it.
+//! do not need it. It is public for tools that want to reproduce the
+//! detector's measurements on a given encoding.
+//!
+//! ```
+//! use charset_norm::chunks::{ChunkSource, Signature, cut_sequence_chunks};
+//!
+//! let payload = "abcdefghij".repeat(10);
+//! let chunks = cut_sequence_chunks(
+//!     payload.as_bytes(),
+//!     "ascii",
+//!     (0..payload.len()).step_by(25).collect(),
+//!     25,
+//!     Signature::None,
+//!     ChunkSource::Deferred,
+//! )
+//! .unwrap();
+//! assert_eq!(chunks.len(), 4);
+//! assert!(chunks.iter().all(|chunk| chunk.len() == 25));
+//! ```
 
 use crate::codecs::{self, DecodeError, Errors};
 

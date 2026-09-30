@@ -1,4 +1,4 @@
-//! The detector.
+//! The detector: [`from_bytes`] and friends, re-exported at the crate root.
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
@@ -16,27 +16,70 @@ use crate::log::{Level, Logger, NoLogger, emit};
 use crate::matches::{CharsetMatch, CharsetMatches, PendingMatches};
 use crate::{TOO_BIG_SEQUENCE, TOO_SMALL_SEQUENCE, coherence, mess, pyfloat};
 
-/// Tuning knobs of [`from_bytes_with`]. The defaults match the reference
-/// implementation.
+/// Tuning knobs of [`from_bytes_with`] and [`detect`].
+///
+/// The [`Default`] values match the Python package's `from_bytes`. Override
+/// only the fields you need with struct update syntax:
+///
+/// ```
+/// use charset_norm::DetectionOptions;
+///
+/// let options = DetectionOptions {
+///     // Never consider these code pages, whatever the payload looks like.
+///     cp_exclusion: vec!["utf_7".into(), "hz".into()],
+///     // Look at more of the payload.
+///     steps: 10,
+///     ..DetectionOptions::default()
+/// };
+/// assert_eq!(options.chunk_size, 512);
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct DetectionOptions {
-    /// Number of chunks sampled from the payload.
+    /// Number of chunks sampled from the payload. Default: `5`.
+    ///
+    /// Chunks are spread evenly over the payload. When the payload is not
+    /// longer than `steps * chunk_size` bytes, it is analysed whole, as a
+    /// single chunk.
     pub steps: usize,
-    /// Size of each sampled chunk, in bytes.
+    /// Size of each sampled chunk, in bytes. Default: `512`.
+    ///
+    /// Shrunk automatically when the payload is too short to hold `steps`
+    /// chunks of this size.
     pub chunk_size: usize,
-    /// Maximum acceptable mess ratio (chaos) for a candidate.
+    /// Maximum acceptable mean chaos (see [`mess::mess_ratio`]) for a
+    /// candidate encoding. Default: `0.2`.
+    ///
+    /// Lower values reject more candidates; raise it to accept noisier text.
     pub threshold: f64,
-    /// Only try these encodings (any alias) when not empty.
+    /// When not empty, only these encodings are tried. Default: empty.
+    ///
+    /// Names may be any alias (`"windows-1252"`, `"UTF-8"`, ...).
     pub cp_isolation: Vec<String>,
-    /// Never try these encodings (any alias).
+    /// Encodings never tried, by any alias. Default: empty.
     pub cp_exclusion: Vec<String>,
-    /// Favour an encoding declared inside the payload (e.g. HTML `charset`).
+    /// Favour an encoding declared inside the payload, such as
+    /// `<meta charset="...">` in HTML or a `# coding: ...` comment in Python
+    /// sources. Default: `true`.
+    ///
+    /// Only the first 8 KiB are searched. A declared encoding is tried right
+    /// after any BOM-announced one, and detection stops there when it
+    /// decodes the payload without any chaos.
     pub preemptive_behaviour: bool,
-    /// Trace the mess analysis when one or two encodings are isolated.
+    /// Log the chaos breakdown of every sampled chunk at [`Level::Trace`].
+    /// Default: `false`.
+    ///
+    /// Only takes effect when [`cp_isolation`](Self::cp_isolation) names one
+    /// or two encodings, to keep the output readable.
     pub explain: bool,
-    /// Minimum coherence for a language to be reported.
+    /// Minimum coherence (in `[0, 1]`) for a language to be reported.
+    /// Default: `0.1`.
     pub language_threshold: f64,
-    /// Fall back on ASCII/UTF-8/declared encodings when nothing else fits.
+    /// Fall back on ASCII, UTF-8 or a declared encoding when every candidate
+    /// is rejected but one of those still decodes the payload. Default:
+    /// `true`.
+    ///
+    /// Without the fallback, text that is merely noisy can come back as no
+    /// match at all (see [`is_binary`]).
     pub enable_fallback: bool,
 }
 
@@ -66,6 +109,12 @@ fn decode_into(bytes: &[u8], encoding: &str, out: &mut String) -> Result<(), Dec
 
 /// Detect the plausible encodings of `payload` with default options.
 ///
+/// Results are ranked best first; [`CharsetMatches::best`] is the verdict.
+/// An empty result means no encoding fits, which usually means `payload` is
+/// binary. An empty payload yields a single `"utf_8"` match.
+///
+/// Use [`from_bytes_with`] to tune detection or collect diagnostics.
+///
 /// ```
 /// use charset_norm::codecs;
 ///
@@ -84,6 +133,17 @@ pub fn from_bytes(payload: &[u8]) -> CharsetMatches {
 
 /// Read a file and detect its plausible encodings with default options.
 ///
+/// The whole file is read into memory; payloads of [`TOO_BIG_SEQUENCE`]
+/// bytes or more are sampled rather than fully decoded.
+///
+/// ```no_run
+/// let results = charset_norm::from_path("subtitles.srt")?;
+/// if let Some(best) = results.best() {
+///     println!("{} ({})", best.encoding(), best.language());
+/// }
+/// # Ok::<(), std::io::Error>(())
+/// ```
+///
 /// # Errors
 ///
 /// Any error reading the file.
@@ -92,6 +152,15 @@ pub fn from_path(path: impl AsRef<Path>) -> std::io::Result<CharsetMatches> {
 }
 
 /// Whether `payload` looks like binary data rather than text.
+///
+/// This runs a full detection with
+/// [`enable_fallback`](DetectionOptions::enable_fallback) turned off and
+/// reports whether no encoding fits.
+///
+/// ```
+/// assert!(!charset_norm::is_binary("Plain old text, nothing to see here.".as_bytes()));
+/// assert!(charset_norm::is_binary(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x01\x00\x00\x00\x01\x00\x08\x06\x00\x00\x00\x5c\x72\xa8\x66\x00\x00\x00\x04\x73\x42\x49\x54\x08\x08"));
+/// ```
 #[must_use]
 pub fn is_binary(payload: &[u8]) -> bool {
     let options = DetectionOptions {
@@ -101,8 +170,24 @@ pub fn is_binary(payload: &[u8]) -> bool {
     from_bytes_with(payload, &options, &NoLogger).is_empty()
 }
 
-/// Detect the plausible encodings of `payload`, reporting progress to
-/// `logger`.
+/// Detect the plausible encodings of `payload` with custom `options`,
+/// reporting progress to `logger`.
+///
+/// Pass [`NoLogger`] to discard diagnostics.
+///
+/// ```
+/// use charset_norm::{DetectionOptions, NoLogger, codecs, from_bytes_with};
+///
+/// let payload = codecs::encode("Le cœur a ses raisons que la raison ne connaît point.", "cp1252").unwrap();
+/// let options = DetectionOptions {
+///     cp_isolation: vec!["windows-1252".into(), "iso-8859-15".into()],
+///     ..DetectionOptions::default()
+/// };
+///
+/// let results = from_bytes_with(&payload, &options, &NoLogger);
+/// let best = results.best().unwrap();
+/// assert_eq!(best.encoding(), "cp1252");
+/// ```
 #[must_use]
 pub fn from_bytes_with(
     payload: &[u8],
@@ -112,8 +197,17 @@ pub fn from_bytes_with(
     detect(&Arc::from(payload), options, logger)
 }
 
-/// [`from_bytes_with`] for a payload that is already shared; the matches
-/// keep a reference to it instead of a copy.
+/// [`from_bytes_with`] for a payload that is already shared: the matches keep
+/// a reference to it instead of a copy.
+///
+/// ```
+/// use std::sync::Arc;
+/// use charset_norm::{DetectionOptions, NoLogger};
+///
+/// let payload: Arc<[u8]> = Arc::from("Shared, not copied.".as_bytes());
+/// let results = charset_norm::detect(&payload, &DetectionOptions::default(), &NoLogger);
+/// assert!(Arc::ptr_eq(results.best().unwrap().payload(), &payload));
+/// ```
 #[must_use]
 pub fn detect(
     payload: &Arc<[u8]>,

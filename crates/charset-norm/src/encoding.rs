@@ -1,4 +1,21 @@
 //! Code page names, signatures and the languages a code page can express.
+//!
+//! Names are canonical `CPython` codec names (`"cp1252"`, `"iso8859_5"`,
+//! `"shift_jis"`). [`iana_name`] resolves aliases to them, and
+//! [`supported_encodings`] lists every code page the detector knows.
+//!
+//! ```
+//! use charset_norm::encoding;
+//!
+//! assert_eq!(encoding::iana_name("Windows-1251", true).unwrap(), "cp1251");
+//! assert!(encoding::is_multi_byte_encoding("gb18030"));
+//! assert!(encoding::encoding_languages("cp1251").unwrap().contains(&"Russian"));
+//!
+//! // Byte order marks and in-document declarations.
+//! let (bom, mark) = encoding::identify_sig_or_bom(b"\xef\xbb\xbfhello");
+//! assert_eq!((bom, mark), (Some("utf_8"), &b"\xef\xbb\xbf"[..]));
+//! assert_eq!(encoding::any_specified_encoding(b"# -*- coding: latin-1 -*-", 4096), Some("latin_1"));
+//! ```
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

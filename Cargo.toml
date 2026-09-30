@@ -13,6 +13,8 @@ repository = "https://github.com/RustedBytes/charset-norm"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# docs.rs builds with `--cfg docsrs` to label feature-gated items.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(docsrs)"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
