@@ -18,20 +18,31 @@ repository.workspace = true
 default = []
 # Forward detection diagnostics to the `log` crate (see `charset_norm::log::LogCrate`).
 log = ["dep:log"]
+# Instrument the detector with hotpath (https://github.com/pawurb/hotpath-rs)
+# timing probes. Profiling only: see `examples/profile.rs`.
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# Report allocations per instrumented function instead of timings.
+hotpath-alloc = ["hotpath", "hotpath/hotpath-alloc"]
 
 [dependencies]
+hotpath = { version = "0.28", optional = true }
 log = { version = "0.4", optional = true }
+memchr = "2.7"
 regex = "1.13"
 rustc-hash = "2.1"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1.25"
 unicode_names2 = "4.0"
 
+[[example]]
+name = "profile"
+required-features = ["hotpath"]
+
 [lints]
 workspace = true
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["log"]
 rustdoc-args = ["--cfg", "docsrs"]
 # The crate is platform independent: build the docs once.
 targets = ["x86_64-unknown-linux-gnu"]

@@ -62,6 +62,10 @@ impl Rows {
 pub(super) struct CjkCodec {
     /// Bytes below 0x80 decode to themselves.
     ascii_identity: bool,
+    /// EUC-KR: decodes KS X 1001 make-up sequences.
+    euc_kr: bool,
+    /// GB18030: decodes four-byte sequences.
+    gb18030: bool,
     need: [u8; 256],
     single: [u32; 256],
     double: Rows,
@@ -70,15 +74,17 @@ pub(super) struct CjkCodec {
 }
 
 pub(super) struct CjkData {
-    codecs: HashMap<&'static str, CjkCodec>,
+    /// Indexed like `CJK_NAMES`.
+    codecs: Vec<Option<CjkCodec>>,
     pub(super) iso2022: HashMap<&'static str, Rows>,
     gb18030_ranges: Vec<(u32, u32)>,
     pub(super) pairs: Vec<(char, char)>,
 }
 
 impl CjkData {
-    pub(super) fn codec(&self, name: &str) -> &CjkCodec {
-        &self.codecs[name]
+    /// The codec named `CJK_NAMES[index]`.
+    pub(super) fn codec(&self, index: usize) -> &CjkCodec {
+        self.codecs[index].as_ref().expect("CJK table present")
     }
 }
 
@@ -141,7 +147,7 @@ pub(super) fn cjk() -> &'static CjkData {
         };
         assert_eq!(reader.take(6), b"CNCJK1", "corrupted CJK tables");
         let mut data = CjkData {
-            codecs: HashMap::new(),
+            codecs: CJK_NAMES.iter().map(|_| None).collect(),
             iso2022: HashMap::new(),
             gb18030_ranges: Vec::new(),
             pairs: Vec::new(),
@@ -154,7 +160,7 @@ pub(super) fn cjk() -> &'static CjkData {
                 data: reader.take(size),
                 position: 0,
             };
-            if let Some(&codec) = CJK_NAMES.iter().find(|value| **value == name) {
+            if let Some(index) = CJK_NAMES.iter().position(|value| *value == name) {
                 let mut need = [0u8; 256];
                 need.copy_from_slice(section.take(256));
                 let mut single = [NONE; 256];
@@ -167,17 +173,16 @@ pub(super) fn cjk() -> &'static CjkData {
                 let ascii_identity = (0u8..0x80).all(|byte| {
                     need[usize::from(byte)] == 1 && single[usize::from(byte)] == u32::from(byte)
                 });
-                data.codecs.insert(
-                    codec,
-                    CjkCodec {
-                        ascii_identity,
-                        need,
-                        single,
-                        double,
-                        triple_prefix,
-                        triple,
-                    },
-                );
+                data.codecs[index] = Some(CjkCodec {
+                    ascii_identity,
+                    euc_kr: name == "euc_kr",
+                    gb18030: name == "gb18030",
+                    need,
+                    single,
+                    double,
+                    triple_prefix,
+                    triple,
+                });
             } else if name == "gb18030_ranges" {
                 for _ in 0..section.u16() {
                     let index = section.u32();
@@ -211,21 +216,29 @@ pub(super) fn cjk() -> &'static CjkData {
     })
 }
 
+/// Append the character (or pair) a table value stands for.
 #[inline]
 pub(super) fn push_value(
     out: &mut String,
     value: u32,
     pairs: &[(char, char)],
 ) -> Result<(), DecodeError> {
-    if value >= PAIR_BASE {
-        let (first, second) = pairs
-            .get((value - PAIR_BASE) as usize)
-            .ok_or(DecodeError::Invalid)?;
-        out.push(*first);
-        out.push(*second);
-    } else {
+    // Called once per decoded character: keep the common case small enough
+    // to inline.
+    if value < PAIR_BASE {
         out.push(char::from_u32(value).ok_or(DecodeError::Invalid)?);
+        return Ok(());
     }
+    push_pair(out, value, pairs)
+}
+
+#[cold]
+fn push_pair(out: &mut String, value: u32, pairs: &[(char, char)]) -> Result<(), DecodeError> {
+    let (first, second) = pairs
+        .get((value - PAIR_BASE) as usize)
+        .ok_or(DecodeError::Invalid)?;
+    out.push(*first);
+    out.push(*second);
     Ok(())
 }
 
@@ -325,6 +338,7 @@ fn gb18030_four_byte(data: &[u8], out: &mut String, ranges: &[(u32, u32)]) -> St
     Step::Error(1)
 }
 
+#[inline]
 fn table_step(
     value: Option<u32>,
     width: usize,
@@ -348,12 +362,13 @@ pub(super) fn decode_cjk(
     out: &mut String,
 ) -> Result<(), DecodeError> {
     let tables = cjk();
-    let is_euc_kr = std::ptr::eq(codec, tables.codec("euc_kr"));
-    let is_gb18030 = std::ptr::eq(codec, tables.codec("gb18030"));
+    let (is_euc_kr, is_gb18030) = (codec.euc_kr, codec.gb18030);
     out.reserve(data.len() * 2);
     let mut position = 0usize;
     while position < data.len() {
-        if codec.ascii_identity {
+        // Text in these codecs alternates between ASCII runs and multi-byte
+        // characters: only look for a run when the next byte is ASCII.
+        if codec.ascii_identity && data[position] < 0x80 {
             let run = ascii_prefix(&data[position..]);
             push_ascii(out, &data[position..position + run]);
             position += run;

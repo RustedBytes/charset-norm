@@ -110,7 +110,13 @@ pub(super) fn single_byte_table(index: usize) -> &'static SingleByteTable {
 /// Copy a run of ASCII bytes that the codec maps onto themselves.
 #[inline]
 pub(super) fn push_ascii(out: &mut String, run: &[u8]) {
-    out.push_str(std::str::from_utf8(run).unwrap_or_default());
+    // Short runs (common between multi-byte characters) are cheaper to push
+    // byte by byte than to validate as UTF-8.
+    if run.len() < 16 {
+        out.extend(run.iter().map(|&byte| char::from(byte)));
+    } else {
+        out.push_str(std::str::from_utf8(run).unwrap_or_default());
+    }
 }
 
 pub(super) fn decode_single_byte(

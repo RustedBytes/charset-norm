@@ -547,6 +547,7 @@ pub fn mess_ratio(decoded_sequence: &str, maximum_threshold: f64) -> f64 {
 ///
 /// With `debug` set, the score of each detector is logged at
 /// [`Level::Trace`] once analysis ends.
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn mess_ratio_with(
     decoded_sequence: &str,
     maximum_threshold: f64,

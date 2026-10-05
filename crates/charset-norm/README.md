@@ -50,6 +50,24 @@ and `unicode`.
 
 - `log`: forward detection diagnostics to the [`log`](https://docs.rs/log)
   crate through `charset_norm::log::LogCrate`.
+- `hotpath`: instrument the detector's stages (decoding, chunk sampling,
+  mess and coherence scoring, ...) with [hotpath](https://github.com/pawurb/hotpath-rs)
+  probes. They report into the profile of any binary annotated with
+  `#[hotpath::main]`, and do nothing otherwise. `hotpath-alloc` reports
+  allocations instead of timings. Without these features the probes compile
+  to nothing.
+
+## Profiling
+
+The `profile` example runs detection over a directory of files and prints a
+hotpath report:
+
+```sh
+git clone https://github.com/Ousret/char-dataset
+cargo run --release -p charset-norm --example profile --features hotpath -- char-dataset
+# Allocations instead of timings:
+cargo run --release -p charset-norm --example profile --features hotpath-alloc -- char-dataset
+```
 
 ## License
 

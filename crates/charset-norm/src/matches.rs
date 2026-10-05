@@ -322,7 +322,8 @@ impl CharsetMatch {
         if self.payload.len() >= TOO_BIG_SEQUENCE || existing.chaos != self.chaos {
             return Ok(false);
         }
-        Ok(existing.fingerprint()? == self.fingerprint()?)
+        // Comparing the texts is exact, and cheaper than hashing both.
+        Ok(existing.decoded()? == self.decoded()?)
     }
 
     /// Whether this match ranks before `other` (lower chaos, then higher
@@ -603,6 +604,7 @@ impl PendingMatches {
         self.results.len()
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) fn push(&mut self, item: CharsetMatch) {
         for existing in &mut self.results {
             if item.is_duplicate_of(existing).unwrap_or(false) {

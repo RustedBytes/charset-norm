@@ -209,6 +209,7 @@ pub fn from_bytes_with(
 /// assert!(Arc::ptr_eq(results.best().unwrap().payload(), &payload));
 /// ```
 #[must_use]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn detect(
     payload: &Arc<[u8]>,
     options: &DetectionOptions,
@@ -410,6 +411,7 @@ struct Detector<'a> {
 }
 
 impl<'a> Detector<'a> {
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn new(payload: &'a Arc<[u8]>, options: &'a DetectionOptions, logger: &'a dyn Logger) -> Self {
         let length = payload.len();
         let mut steps = options.steps;
@@ -552,6 +554,12 @@ impl<'a> Detector<'a> {
         })
     }
 
+    /// ASCII, UTF-8 and the declared encoding: their matches end detection
+    /// early and keep their decoded text.
+    fn is_preferred(&self, encoding: &str) -> bool {
+        self.specified == Some(encoding) || matches!(encoding, "ascii" | "utf_8")
+    }
+
     /// Payload without a stripped signature.
     fn source(&self, candidate: &Candidate) -> &'a [u8] {
         let payload: &'a [u8] = self.payload;
@@ -565,6 +573,7 @@ impl<'a> Detector<'a> {
     /// Decode up front when the reference does (multi-byte codecs, or a
     /// prefix of large payloads). Returns whether `text` now holds the whole
     /// decoded payload; `Err` rejects the candidate.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn initial_decode(
         &self,
         candidate: &Candidate,
@@ -590,6 +599,7 @@ impl<'a> Detector<'a> {
 
     /// Measure the mess of sampled chunks, recording them in `chunk_ids`;
     /// `None` when a chunk does not decode.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn sample(&mut self, candidate: &Candidate, decoded: Option<&str>) -> Option<Sample> {
         let length = self.payload.len();
         let deferred = !candidate.multibyte && !self.is_too_large;
@@ -671,6 +681,7 @@ impl<'a> Detector<'a> {
 
     /// Languages coherent with the sampled chunks, merged across chunks,
     /// left in `Buffers::merged`.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn coherence(&mut self, candidate: &Candidate) {
         let buffers = &mut self.buffers;
         buffers.merged.clear();
@@ -723,6 +734,7 @@ impl<'a> Detector<'a> {
     }
 
     /// Evaluate a candidate, using `text` for its decoded payload.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn evaluate(
         &mut self,
         candidate: &Candidate,
@@ -760,16 +772,25 @@ impl<'a> Detector<'a> {
             return ControlFlow::Continue(());
         }
         if !candidate.multibyte && !self.is_too_large {
-            if decode_into(self.source(candidate), encoding, text).is_err() {
+            // The whole payload must decode. Only the text of a preferred
+            // encoding is kept up front (as the reference does for large
+            // payloads); other code pages are checked against their table
+            // and decode lazily, as most matches are never read.
+            if self.is_preferred(encoding) {
+                if decode_into(self.source(candidate), encoding, text).is_err() {
+                    return ControlFlow::Continue(());
+                }
+                decoded = true;
+            } else if !codecs::is_valid(self.source(candidate), encoding).unwrap_or(false) {
                 return ControlFlow::Continue(());
             }
-            decoded = true;
         }
         self.coherence(candidate);
         self.accept(candidate, &sample, decoded.then_some(text), decoded_chars)
     }
 
     /// Record a plausible candidate and apply the reference's early exits.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn accept(
         &mut self,
         candidate: &Candidate,
@@ -782,7 +803,7 @@ impl<'a> Detector<'a> {
         let mean = sample.mean;
         let merged = &self.buffers.merged;
         let best_coherence = merged.iter().map(|item| item.1).fold(0.0, f64::max);
-        let preferred = self.specified == Some(encoding) || matches!(encoding, "ascii" | "utf_8");
+        let preferred = self.is_preferred(encoding);
         let retained = if !self.is_too_large || preferred {
             decoded.map(std::mem::take)
         } else {
@@ -843,6 +864,7 @@ impl<'a> Detector<'a> {
         ControlFlow::Continue(())
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn finish(&mut self) -> CharsetMatches {
         if self.results.len() == 0
             && let Some(value) = self

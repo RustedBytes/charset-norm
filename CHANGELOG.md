@@ -2,6 +2,24 @@
 All notable changes to charset-normalizer will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+### Added
+- ``hotpath`` and ``hotpath-alloc`` features of the ``charset-norm`` crate:
+  [hotpath](https://github.com/pawurb/hotpath-rs) timing (or allocation)
+  probes on the detector's stages, and a ``profile`` example reporting them
+  over a directory of samples.
+
+### Changed
+- Detection is about 15% faster on the char-dataset corpus, with identical
+  results: accepted single-byte candidates are validated against their code
+  page table and decoded lazily, codec names resolve through a hash map, CJK
+  decoding skips ASCII-run probing before multi-byte characters, chunk
+  realignment searches near the expected offset first (with ``memchr``), and
+  the declared-charset prefilter scans with ``memchr``.
+- ``CharsetMatch::is_duplicate_of`` compares decoded texts instead of their
+  fingerprints.
+
 ## [4.0.0](https://github.com/RustedBytes/charset-norm/releases/tag/v4.0.0) (2026-09-30)
 
 ### Added

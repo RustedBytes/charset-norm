@@ -107,19 +107,31 @@ fn head(text: &str, count: usize) -> &str {
 /// `prefix in decoded`, probing first around where a chunk starting at byte
 /// `offset` of the payload is expected to land (any hit there is a hit).
 fn contains_near(decoded: &str, prefix: &str, offset: usize, payload_len: usize) -> bool {
-    const RADIUS: usize = 32768 * 4;
     let expected = offset.saturating_mul(decoded.len()) / payload_len.max(1);
-    let mut start = expected.saturating_sub(RADIUS).min(decoded.len());
-    let mut end = expected
-        .saturating_add(RADIUS + prefix.len())
-        .min(decoded.len());
-    while !decoded.is_char_boundary(start) {
-        start -= 1;
+    // UTF-8 is self-synchronizing: a byte search finds exactly the
+    // substrings `str::contains` would.
+    let finder = memchr::memmem::Finder::new(prefix);
+    let found = |text: &str| finder.find(text.as_bytes()).is_some();
+    // Widening windows: the chunk nearly always starts close to `expected`.
+    for radius in [2048, 32768 * 4] {
+        let mut start = expected.saturating_sub(radius).min(decoded.len());
+        let mut end = expected
+            .saturating_add(radius + prefix.len())
+            .min(decoded.len());
+        while !decoded.is_char_boundary(start) {
+            start -= 1;
+        }
+        while !decoded.is_char_boundary(end) {
+            end += 1;
+        }
+        if found(&decoded[start..end]) {
+            return true;
+        }
+        if start == 0 && end == decoded.len() {
+            return false;
+        }
     }
-    while !decoded.is_char_boundary(end) {
-        end += 1;
-    }
-    decoded[start..end].contains(prefix) || decoded.contains(prefix)
+    found(decoded)
 }
 
 /// Chunk sampler for one candidate encoding. Chunks are produced lazily so
@@ -222,6 +234,7 @@ impl<'a, I: Iterator<Item = usize> + Clone> ChunkCutter<'a, I> {
     ///
     /// [`DecodeError::Invalid`] when a chunk does not decode, or
     /// [`DecodeError::Unknown`] for an unsupported encoding.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub fn validate(&self) -> Result<(), DecodeError> {
         match self.source {
             // Decoded text and lenient decoding cannot fail.
@@ -254,6 +267,7 @@ impl<'a, I: Iterator<Item = usize> + Clone> ChunkCutter<'a, I> {
 
     /// Decode the next chunk into `out` (replacing its contents).
     /// `None` once every chunk has been produced.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub fn next_into(&mut self, out: &mut String) -> Option<Result<(), DecodeError>> {
         if self.done {
             return None;
@@ -334,7 +348,12 @@ impl<'a, I: Iterator<Item = usize> + Clone> ChunkCutter<'a, I> {
                 self.sequences.len().saturating_sub(delta - offset)
             };
             self.decode_cut(start, end, Errors::Ignore, chunk)?;
-            if decoded.contains(head(chunk, prefix_chars)) {
+            if contains_near(
+                decoded,
+                head(chunk, prefix_chars),
+                start,
+                self.sequences.len(),
+            ) {
                 break;
             }
         }

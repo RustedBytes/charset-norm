@@ -37,6 +37,9 @@ mod utf;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::OnceLock;
+
+use rustc_hash::FxHashMap;
 
 use crate::tables::{SINGLE_BYTE_CODECS, iana_lookup};
 
@@ -104,12 +107,54 @@ enum Codec {
     Utf16(Endian),
     Utf32(Endian),
     Utf7,
-    Cjk(&'static str),
+    /// Index into `CJK_NAMES`.
+    Cjk(usize),
     Iso2022(Iso2022Variant),
     Hz,
 }
 
+/// Canonical names of the codecs that are not table-driven.
+const PROGRAMMATIC_NAMES: [&str; 19] = [
+    "ascii",
+    "latin_1",
+    "utf_8",
+    "utf_8_sig",
+    "utf_16",
+    "utf_16_le",
+    "utf_16_be",
+    "utf_32",
+    "utf_32_le",
+    "utf_32_be",
+    "utf_7",
+    "hz",
+    "iso2022_kr",
+    "iso2022_jp",
+    "iso2022_jp_1",
+    "iso2022_jp_2",
+    "iso2022_jp_2004",
+    "iso2022_jp_3",
+    "iso2022_jp_ext",
+];
+
+/// The codec of a canonical name. The detector resolves names for every
+/// chunk it decodes, so they are looked up in a hash map built once.
 fn codec_by_name(name: &str) -> Option<Codec> {
+    static CODECS: OnceLock<FxHashMap<&'static str, Codec>> = OnceLock::new();
+    CODECS
+        .get_or_init(|| {
+            PROGRAMMATIC_NAMES
+                .iter()
+                .chain(&CJK_NAMES)
+                .copied()
+                .chain(SINGLE_BYTE_CODECS.iter().map(|(name, _)| *name))
+                .filter_map(|name| Some((name, resolve_codec(name)?)))
+                .collect()
+        })
+        .get(name)
+        .copied()
+}
+
+fn resolve_codec(name: &str) -> Option<Codec> {
     Some(match name {
         "ascii" => Codec::Ascii,
         "latin_1" => Codec::Latin1,
@@ -133,8 +178,7 @@ fn codec_by_name(name: &str) -> Option<Codec> {
         "big5" | "big5hkscs" | "cp932" | "cp949" | "cp950" | "euc_jis_2004" | "euc_jisx0213"
         | "euc_jp" | "euc_kr" | "gb18030" | "gb2312" | "gbk" | "johab" | "shift_jis"
         | "shift_jis_2004" | "shift_jisx0213" => {
-            let index = CJK_NAMES.iter().position(|value| *value == name)?;
-            Codec::Cjk(CJK_NAMES[index])
+            Codec::Cjk(CJK_NAMES.iter().position(|value| *value == name)?)
         }
         _ => {
             let index = SINGLE_BYTE_CODECS
@@ -208,6 +252,7 @@ pub fn decode(data: &[u8], encoding: &str, errors: Errors) -> Result<String, Dec
 /// # Errors
 ///
 /// As for [`decode`].
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn decode_into(
     data: &[u8],
     encoding: &str,
@@ -234,7 +279,7 @@ pub fn decode_into(
         Codec::Utf16(endian) => decode_utf16(data, endian, errors, out),
         Codec::Utf32(endian) => decode_utf32(data, endian, errors, out),
         Codec::Utf7 => decode_utf7(data, errors, out),
-        Codec::Cjk(name) => decode_cjk(cjk().codec(name), data, errors, out),
+        Codec::Cjk(index) => decode_cjk(cjk().codec(index), data, errors, out),
         Codec::Iso2022(variant) => decode_iso2022(variant, data, errors, out),
         Codec::Hz => decode_hz(data, errors, out),
     }

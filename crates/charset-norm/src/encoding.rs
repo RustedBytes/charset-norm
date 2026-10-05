@@ -164,15 +164,20 @@ pub(crate) fn encoding_indication() -> &'static Regex {
 /// assert_eq!(charset_norm::encoding::any_specified_encoding(html, 8192), Some("cp1252"));
 /// ```
 #[must_use]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn any_specified_encoding(payload: &[u8], search_zone: usize) -> Option<&'static str> {
     let search = &payload[..payload.len().min(search_zone)];
-    if !search
-        .windows(6)
-        .any(|part| part.eq_ignore_ascii_case(b"coding"))
-        && !search
-            .windows(7)
-            .any(|part| part.eq_ignore_ascii_case(b"charset"))
-    {
+    // Every declaration names "coding" (or "encoding") or "charset": both
+    // start with a C, which memchr finds quickly.
+    let declares = memchr::memchr2_iter(b'c', b'C', search).any(|position| {
+        let rest = &search[position..];
+        rest.get(..6)
+            .is_some_and(|part| part.eq_ignore_ascii_case(b"coding"))
+            || rest
+                .get(..7)
+                .is_some_and(|part| part.eq_ignore_ascii_case(b"charset"))
+    });
+    if !declares {
         return None;
     }
     // Non-ASCII bytes are dropped before matching, as the reference does.

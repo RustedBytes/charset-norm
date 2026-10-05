@@ -497,6 +497,7 @@ pub fn coherence_ratio(
 
 /// [`coherence_ratio`] with the inclusion list already split, reusing
 /// `scratch`; the results are appended to `out`.
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub(crate) fn coherence_into(
     decoded: &str,
     threshold: f64,
