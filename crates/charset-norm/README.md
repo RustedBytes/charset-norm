@@ -13,7 +13,7 @@ agree with the Python package.
 
 ```toml
 [dependencies]
-charset-norm = "4.0"
+charset-norm = "4.1"
 ```
 
 ```rust

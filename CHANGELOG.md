@@ -2,7 +2,7 @@
 All notable changes to charset-normalizer will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## [4.1.0](https://github.com/RustedBytes/charset-norm/releases/tag/v4.1.0) (2026-10-05)
 
 ### Added
 - ``hotpath`` and ``hotpath-alloc`` features of the ``charset-norm`` crate:
