@@ -30,9 +30,23 @@ pip install charset-norm
 uv add charset-norm
 ```
 
-Prebuilt wheels cover Linux (x86_64, arm64), Windows and macOS (arm64) for
-CPython 3.9+ (abi3), free-threaded CPython 3.14 and PyPy 3.11/3.12. Other
-platforms build from the source distribution. To install the latest code:
+Prebuilt wheels are available on [PyPI](https://pypi.org/project/charset-norm/4.2.0/#files)
+for the following interpreters:
+
+| Interpreter | Wheel tags | Supported platforms |
+|-------------|------------|---------------------|
+| CPython 3.9+ (GIL) | `cp39-abi3` | Linux x86_64/ARM64 (glibc 2.17+), Windows x64, macOS ARM64 (11+) |
+| Free-threaded CPython 3.14t | `cp314-cp314t` | Linux x86_64/ARM64 (glibc 2.28+), Windows x64, macOS ARM64 (11+) |
+| CPython 3.15+ (GIL and free-threaded 3.15t+) | `cp315-abi3.abi3t` | Linux x86_64/ARM64 (glibc 2.28+), Windows x64, macOS ARM64 (11+) |
+| PyPy 3.11 / 3.12 | `pp311-pypy311_pp80` / `pp312-pypy312_pp80` | Linux x86_64/ARM64 (glibc 2.28+), Windows x64, macOS ARM64 (11+) |
+
+Starting with v4.2.0, one shared stable-ABI wheel per platform supports both
+regular and free-threaded CPython 3.15+. Python 3.14t continues to use its
+interpreter-specific wheels; it cannot use the Python 3.15+ shared wheels.
+See the [4.2.0 changelog](CHANGELOG.md#420-2026-10-07) for packaging details.
+
+Other platforms build from the source distribution and require Rust 1.98+.
+To install the latest code:
 
 ```sh
 pip install git+https://github.com/RustedBytes/charset-norm.git
