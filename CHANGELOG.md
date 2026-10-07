@@ -2,6 +2,23 @@
 All notable changes to charset-normalizer will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [4.2.0](https://github.com/RustedBytes/charset-norm/releases/tag/v4.2.0) (2026-10-07)
+
+### Added
+- Shared stable-ABI wheels for CPython 3.15+ and free-threaded CPython 3.15+
+  (``cp315-abi3.abi3t``) on Linux (x86_64, arm64), Windows and macOS (arm64).
+  Python 3.14t retains its interpreter-specific wheels; PyPy builds are unchanged.
+
+### Changed
+- Release packaging enables ``abi3t-py315`` alongside ``abi3-py39`` and builds
+  one shared Python 3.15+ wheel per platform.
+- Release validation expects 20 platform wheels and checks that filename tags
+  agree with the tags in each wheel's ``WHEEL`` metadata.
+- Interpreter wheels are smoke-tested in clean virtual environments. The same
+  Python 3.15+ wheel is checked on both GIL and free-threaded interpreters for
+  native import, decoding and encoding; free-threaded imports must leave the
+  GIL disabled.
+
 ## [4.1.0](https://github.com/RustedBytes/charset-norm/releases/tag/v4.1.0) (2026-10-05)
 
 ### Added

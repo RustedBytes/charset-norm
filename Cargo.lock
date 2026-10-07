@@ -68,7 +68,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "charset-norm"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "hotpath",
  "log",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "charset-norm-python"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "charset-norm",
  "mimalloc",
